@@ -7,3 +7,7 @@ mkdir -p work/demo docs/images
 swift scripts/make-icon.swift work/demo/MDRIcon.iconset work/demo/MDRIcon.icon
 cp work/demo/MDRIcon.iconset/icon_256x256@2x.png docs/images/icon.png
 MDR_DEMO_DIR="$PWD/work/demo" .build/debug/mdr
+for MDR_IMAGE in review code diagram; do
+  swift scripts/frame-screenshot.swift "docs/images/$MDR_IMAGE.png" "work/demo/$MDR_IMAGE-framed.png" export-service.md
+  cp "work/demo/$MDR_IMAGE-framed.png" "docs/images/$MDR_IMAGE.png"
+done

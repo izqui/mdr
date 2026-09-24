@@ -41,8 +41,10 @@ public struct SourceRevision: Codable, Equatable, Sendable {
 public struct SourceSnapshot: Equatable, Sendable {
     public var text: String
     public var revision: SourceRevision
-    public init(text: String, modifiedAt: String = ReviewClock.now()) {
+    public var createdAt: String?
+    public init(text: String, modifiedAt: String = ReviewClock.now(), createdAt: String? = nil) {
         self.text = text
+        self.createdAt = createdAt
         self.revision = SourceRevision(sha256: sha256(text), modifiedAt: modifiedAt, byteLength: text.utf8.count)
     }
     public static func read(_ url: URL) throws -> SourceSnapshot {
@@ -58,7 +60,8 @@ public struct SourceSnapshot: Equatable, Sendable {
             if (before[.modificationDate] as? Date) == (after[.modificationDate] as? Date),
                (before[.size] as? NSNumber) == (after[.size] as? NSNumber),
                (before[.systemFileNumber] as? NSNumber) == (after[.systemFileNumber] as? NSNumber) {
-                return SourceSnapshot(text: text, modifiedAt: ReviewClock.string(after[.modificationDate] as? Date ?? Date()))
+                return SourceSnapshot(text: text, modifiedAt: ReviewClock.string(after[.modificationDate] as? Date ?? Date()),
+                                      createdAt: (after[.creationDate] as? Date).map(ReviewClock.string))
             }
         }
         throw MDRError.invalidDocument("The document is still being written. Try opening it again in a moment.")

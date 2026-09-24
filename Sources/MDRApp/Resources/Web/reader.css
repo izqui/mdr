@@ -91,3 +91,5 @@
 .autosave-status{font-size:9px;color:var(--muted)}.note-status{float:right;font-size:8px;letter-spacing:0;text-transform:none;color:var(--muted)}.note-status.addressed{color:var(--accent)}.thread-reply{border-left:2px solid var(--line);margin:16px 0 8px;padding:2px 0 2px 12px}.reply-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-size:10px}.reply-meta time{font-size:8px;color:var(--subtle)}.reply-body{font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:7px}.composer-actions{flex-wrap:wrap}
 
 .reply-edit{font-size:9px;color:var(--muted);padding:5px 0 0;display:block}.edit-label{font-size:9px;color:var(--subtle);margin-top:6px}.card-bottom{flex-wrap:wrap}
+
+.document-dates{display:flex;flex-wrap:wrap;gap:6px 18px;margin:-13px 0 27px;color:var(--muted);font-size:10px;line-height:1.6}.document-dates>span{white-space:nowrap}.document-dates time{margin-left:4px;font-variant-numeric:tabular-nums}@media print{.document-dates{display:none!important}}

@@ -19,6 +19,9 @@ import MDRCore
             try await wait(reader, "document.querySelector('#document h1')?.textContent === 'Native integration'")
             try await wait(reader, "!!document.querySelector('.mermaid svg')")
             passed.append("Native WebKit loads the reader and offline Mermaid")
+            let originalDates = try SourceSnapshot.read(sourceURL)
+            guard let createdAt = originalDates.createdAt else { throw Failure("Missing file creation date") }
+            try await wait(reader, "!document.getElementById('document-dates').hidden && document.getElementById('document-created').dateTime === \(try ReviewFile.json(createdAt, pretty: false)) && document.getElementById('document-updated').dateTime === \(try ReviewFile.json(originalDates.revision.modifiedAt, pretty: false))")
 
             try await selectComment(reader, quote: "calm and fast", body: "Keep the reading experience quiet.")
             _ = try await reader.webView.evaluateJavaScript("document.getElementById('save-comment').click()")
@@ -50,6 +53,10 @@ import MDRCore
             review = try ReviewFile.decode(Data(contentsOf: ReviewFile.url(for: sourceURL)))
             guard review.source == next, review.feedback.allSatisfy({ $0.state == .attached }), review.feedback.last?.createdAgainst.sha256 == sha256(original) else { throw Failure("Draft provenance or rebasing failed") }
             passed.append("In-place source changes preserve drafts and rebase while retaining original provenance")
+            let updatedDates = try SourceSnapshot.read(sourceURL)
+            guard updatedDates.createdAt == originalDates.createdAt, updatedDates.revision.modifiedAt != originalDates.revision.modifiedAt else { throw Failure("File dates do not describe the in-place edit") }
+            try await wait(reader, "document.getElementById('document-updated').dateTime === \(try ReviewFile.json(updatedDates.revision.modifiedAt, pretty: false))")
+            passed.append("Document creation and update times come from disk and refresh after source edits")
 
             let rewritten = next.replacingOccurrences(of: "calm and fast", with: "clear and focused")
             try Data(rewritten.utf8).write(to: sourceURL, options: .atomic)

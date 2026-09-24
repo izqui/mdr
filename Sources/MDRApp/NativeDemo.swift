@@ -14,6 +14,9 @@ import MDRCore
             try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             let source = root.appendingPathComponent("export-service.md")
             try FileManager.default.copyItem(at: project.appendingPathComponent("examples/export-service.md"), to: source)
+            let formatter = ISO8601DateFormatter()
+            try FileManager.default.setAttributes([.creationDate: formatter.date(from: "2026-09-22T16:00:00Z")!,
+                .modificationDate: formatter.date(from: "2026-09-23T17:18:00Z")!], ofItemAtPath: source.path)
             let snapshot = try SourceSnapshot.read(source)
             var review = Review(sourcePath: source.path, snapshot: snapshot)
             func note(_ quote: String, _ body: String, reply: String) throws -> Feedback {
@@ -51,7 +54,8 @@ import MDRCore
             let items = try JSONSerialization.jsonObject(with: JSONEncoder().encode(review.feedback))
             reader.call("window.mdr.receive", value: ["source": snapshot.text, "revision": revision, "feedback": items,
                 "fileName": "export-service.md", "filePath": "/demo/export-service.md", "feedbackPath": "/demo/export-service.feedback.md",
-                "author": "Maya", "hasSidecar": true, "isWelcome": false, "theme": "paper", "fontSize": 18])
+                "author": "Maya", "hasSidecar": true, "isWelcome": false, "theme": "paper", "fontSize": 18,
+                "documentCreatedAt": "2026-09-22T16:00:00.000Z"])
             try await NativeSmoke.wait(reader, "document.getElementById('settings-toggle').textContent === 'M'")
             _ = try await reader.webView.evaluateJavaScript("window.mdr.command('feedback');document.getElementById('scroll-area').scrollTop=0")
             try await NativeSmoke.wait(reader, "!document.getElementById('feedback-panel').hidden")

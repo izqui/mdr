@@ -1,5 +1,10 @@
 A quiet Mac reader for the specs you write with agents.
 
+New in 0.3.1: file creation and update times above the document heading, refreshed
+as the source changes, plus clearer review messaging and Mac-framed demo images.
+Hover a timestamp to see the full date and timezone. Creation uses the local
+file's creation date; copies and replacements can have a new one.
+
 - Rendered Markdown with an outline, minimap, offline Mermaid, and code highlighting.
 - Comments, editable threads, and replacement suggestions that leave the source untouched.
 - Autosaved review files with authors, timestamps, source hashes, and live agent replies.

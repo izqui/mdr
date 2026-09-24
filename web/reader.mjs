@@ -69,6 +69,7 @@ function applyState(value){
   $('document-kind').textContent=value.isWelcome?'A QUIETER WAY TO REVIEW':'MARKDOWN DOCUMENT';
   const words=value.source.trim().split(/\s+/).filter(Boolean).length;
   $('reading-time').textContent=`${Math.max(1,Math.ceil(words/220))} min read`;
+  renderDocumentDates(value);
   $('word-count').textContent=`${words.toLocaleString()} words`;
   $('document-status').textContent=value.hasSidecar?'Feedback saved beside your document':value.isWelcome?'Welcome to mdr':'Original document · read only';
   $('settings-toggle').textContent=initials(value.author);$('settings-toggle').title=`${value.author} · Appearance and reviewer`;
@@ -364,6 +365,20 @@ function paintAnnotations(){
   }
   if(window.CSS?.highlights){CSS.highlights.set('mdr-comments',new Highlight(...all));CSS.highlights.set('mdr-active',new Highlight(...active));}
   drawMinimap();
+}
+function renderDocumentDates(value){
+  const render=(id,raw,description)=>{
+    const element=$(id),date=raw?new Date(raw):null,valid=date&&!Number.isNaN(date.getTime());
+    element.parentElement.hidden=!valid;
+    if(!valid)return false;
+    element.dateTime=date.toISOString();
+    element.textContent=new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:date.getFullYear()===new Date().getFullYear()?undefined:'numeric',hour:'numeric',minute:'2-digit'}).format(date);
+    element.title=`${description}\n${new Intl.DateTimeFormat(undefined,{dateStyle:'full',timeStyle:'long'}).format(date)}`;
+    return true;
+  };
+  const created=render('document-created',value.documentCreatedAt,'File creation date on this Mac. Copies or replacements may have a new creation date.');
+  const updated=render('document-updated',value.revision?.modifiedAt,'Last modification of the source file.');
+  $('document-dates').hidden=value.isWelcome||(!created&&!updated);
 }
 function formatDate(value){try{return new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(value));}catch{return value;}}
 function renderFeedback(){

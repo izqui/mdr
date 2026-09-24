@@ -291,6 +291,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
             let bytes = FileManager.default.fileExists(atPath: feedbackURL.path) ? try Data(contentsOf: feedbackURL) : nil
             var nextHash = bytes.map { sha256($0) }
             let external = nextHash != diskHash
+            let metadataChanged = latest.createdAt != snapshot.createdAt
             var next = external ? (try bytes.map { try ReviewFile.decode($0) } ?? Review(sourcePath: url.path, snapshot: latest)) : review
             try validateSource(next, url: url, snapshot: latest)
             let changed = latest.revision != snapshot.revision || next.revision.sha256 != latest.revision.sha256
@@ -306,7 +307,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
             } else if external { notice = "Feedback updated from disk." }
             next.sourcePath = url.path
             review = next; diskHash = nextHash; snapshot = latest; snapshots[latest.revision.sha256] = latest
-            if changed || external { sendState() }
+            if changed || external || metadataChanged { sendState() }
             lastWarning = nil
         } catch {
             let message = error.localizedDescription
@@ -521,6 +522,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
                 "feedbackPath": sourceURL.map { ReviewFile.url(for: $0).path } ?? "", "author": reviewerName,
                 "hasSidecar": diskHash != nil, "isWelcome": sourceURL == nil, "notice": notice ?? "",
                 "theme": UserDefaults.standard.string(forKey: "theme") ?? "paper",
+                "documentCreatedAt": snapshot.createdAt ?? "",
                 "fontSize": UserDefaults.standard.object(forKey: "fontSize") as? Int ?? 18]
             call("window.mdr.receive", value: value)
             notice = nil

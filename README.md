@@ -12,9 +12,9 @@
 
 ![A fictional API proposal in mdr, with highlighted feedback and an agent replying in the review thread](docs/images/review.png)
 
-Agents are good at producing documents. Reading them carefully still matters.
+Agents are good at producing documents. Reading them carefully still matters. So does putting the right comment on the exact passage that needs it.
 
-mdr gives specs, plans, and technical proposals a quiet place to be read. Open a Markdown file, follow the outline, study the code, and leave feedback exactly where the thought occurs. Your agent gets a structured review file and can reply in the same conversation while you keep reading.
+mdr gives specs, plans, and technical proposals a quiet place to be read. Open a Markdown file, follow the outline, and study the code. Then anchor a question to a sentence or suggest a better version of a block. Your agent gets the feedback together with its exact context, and can reply in the same conversation while you keep reading.
 
 ```sh
 mdr spec.md
@@ -22,7 +22,7 @@ mdr spec.md
 
 ## Made for the part where you think
 
-- **Reading comes first.** Comfortable typography, a heading outline, a minimap, search, and paper, light, dark, or system appearance.
+- **Reading comes first.** Comfortable typography, a heading outline, a minimap, search, and paper, light, dark, or system appearance. File creation and update times sit quietly above the heading.
 - **Code gets room.** Syntax highlighting, line numbers, copy, wrapping, expand controls, and precise comments or suggestions inside code blocks.
 - **Diagrams belong in the doc.** Mermaid renders locally, alongside tables, lists, links, and prose.
 - **Feedback stays in context.** Highlight to comment. Edit a passage to suggest a replacement. Reply, correct, and edit in threads.

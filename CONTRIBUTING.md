@@ -48,7 +48,7 @@ The README uses `examples/export-service.md`, a fictional API proposal. To regen
 bash scripts/capture-demo.sh
 ```
 
-The demo harness creates its own source and feedback under `work/demo`, uses fictional reviewer identities, and writes cropped reader snapshots into `docs/images`. Never use an actual user's review file, recent-document list, desktop, or terminal history in published images.
+The demo harness creates its own source and feedback under `work/demo`, uses fictional reviewer identities, and captures the actual native reader. The framing script adds a Mac window surround and shadow for the README, without capturing a desktop. Images go into `docs/images`. Never use an actual user's review file, recent-document list, desktop, or terminal history in published images.
 
 ## Release
 
