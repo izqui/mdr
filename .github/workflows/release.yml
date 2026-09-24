@@ -1,0 +1,47 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      - run: npm test
+      - run: python3 scripts/test-feedback-cli.py
+      - run: npx playwright install chromium
+      - run: npm run test:ui
+      - run: npm run build
+      - run: python3 scripts/test-distribution.py
+      - name: Package universal app, DMG, and skill
+        env:
+          MDR_RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/package-release.sh "$MDR_RELEASE_TAG"
+      - name: Publish all release assets together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MDR_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$MDR_RELEASE_TAG" dist/release/* \
+            --verify-tag --draft --title "mdr $MDR_RELEASE_TAG" \
+            --notes-file docs/RELEASE-NOTES.md
+          gh release edit "$MDR_RELEASE_TAG" --draft=false

@@ -1,0 +1,32 @@
+#!/bin/zsh
+set -euo pipefail
+MDR_BIN_PATH="${0:A:h}"
+MDR_APP_PATH="$MDR_BIN_PATH/../dist/mdr.app"
+if [[ "$MDR_BIN_PATH" == */Contents/Resources ]]; then
+  MDR_APP_PATH="${MDR_BIN_PATH:h:h}"
+fi
+if [[ ! -d "$MDR_APP_PATH" ]]; then
+  print -u2 "mdr.app is missing. Run npm run build in the mdr project."
+  exit 1
+fi
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  exec "$MDR_APP_PATH/Contents/MacOS/mdr" --help
+elif [[ "${1:-}" == "skill" ]]; then
+  shift
+  exec "$MDR_APP_PATH/Contents/MacOS/mdr" --skill "$@"
+elif [[ "${1:-}" == "--install-cli" ]]; then
+  exec "$MDR_APP_PATH/Contents/MacOS/mdr" "$@"
+elif [[ "${1:-}" == "feedback" ]]; then
+  shift
+  exec "$MDR_APP_PATH/Contents/MacOS/mdr" --feedback "$@"
+elif (( $# == 0 )); then
+  open "$MDR_APP_PATH"
+else
+  for MDR_SOURCE_PATH in "$@"; do
+    if [[ ! -f "$MDR_SOURCE_PATH" ]]; then
+      print -u2 "mdr: file not found: $MDR_SOURCE_PATH"
+      exit 1
+    fi
+  done
+  open -a "$MDR_APP_PATH" -- "$@"
+fi

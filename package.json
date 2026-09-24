@@ -1,0 +1,25 @@
+{
+  "name": "mdr-reader",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "build": "bash scripts/build-app.sh",
+    "test": "node --test web/*.test.mjs && swift test",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "highlight.js": "11.12.0",
+    "markdown-it": "15.0.2",
+    "mermaid": "12.0.0",
+    "turndown": "7.2.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "esbuild": "0.28.2"
+  },
+  "overrides": {
+    "lodash-es": "4.18.1"
+  }
+}

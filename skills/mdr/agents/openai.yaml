@@ -1,0 +1,5 @@
+interface:
+  display_name: "mdr"
+  short_description: "Read and respond to a human's Markdown review"
+  brand_color: "#527367"
+  default_prompt: "Use $mdr to review this spec with me, watch my posted feedback, and reply in each thread as you address it."

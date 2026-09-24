@@ -1,0 +1,26 @@
+mdr — read beautifully, review together
+
+1. Drag mdr.app to Applications.
+2. Open mdr. macOS 14 or later is required (Apple Silicon or Intel).
+3. Choose “Install Command” when offered, or use the mdr menu later.
+4. If Terminal cannot find mdr, add this line to ~/.zshrc and open a new Terminal:
+
+   export PATH="$HOME/.local/bin:$PATH"
+
+   mdr spec.md
+   mdr --help
+
+This early release is ad hoc signed, not Apple notarized. After trying to open it,
+use System Settings → Privacy & Security → Open Anyway if macOS blocks it.
+Only do this for a copy you trust. No system-wide security changes are needed.
+https://support.apple.com/en-us/102445
+
+Install the included agent skill:
+   mdr skill --install "$HOME/.agents/skills/mdr"   (Codex)
+   mdr skill --install "$HOME/.claude/skills/mdr"   (Claude Code)
+
+The app works offline. Your agent runs separately and reads the local feedback
+file. Reviews include a full copy of the source, reviewer names, and local paths;
+share those files only when you intend to share their contents.
+
+Code, documentation, and releases: https://github.com/izqui/mdr
