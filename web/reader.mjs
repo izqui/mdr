@@ -1,4 +1,5 @@
 import {measure,performanceSnapshot} from './performance.mjs';
+import {sourceSelection,installSelectionScrolling} from './selection.mjs';
 import {FeedbackAutosave} from './autosave.mjs';
 import {createMarkdown,renderMarkdown,escapeHTML as esc,sourceBoundary,highlightedLines} from './markdown.mjs';
 import TurndownService from 'turndown';
@@ -141,7 +142,7 @@ function highlightNearbyCode(){
   codeFrame=0;
   const remaining=80-(performance.now()-lastReaderScroll);
   if(remaining>0){codeFrame=setTimeout(highlightNearbyCode,remaining);return;}
-  if(editing||composer||!window.getSelection()?.isCollapsed||$('find-input').value)return;
+  if(selectionScrolling.dragging||editing||composer||!window.getSelection()?.isCollapsed||$('find-input').value)return;
   let changed=false,annotationsChanged=false;
   const started=performance.now();
   for(const block of nearbyCode){
@@ -275,7 +276,7 @@ $('minimap-track').addEventListener('pointerdown',event=>{moveMinimap(event);$('
 $('minimap-track').addEventListener('pointermove',event=>{if($('minimap-track').hasPointerCapture(event.pointerId))moveMinimap(event);});
 $('scroll-area').addEventListener('scroll',()=>{
   lastReaderScroll=performance.now();
-  if(!progressFrame)progressFrame=requestAnimationFrame(()=>{progressFrame=0;updateProgress();});
+  if(!progressFrame)progressFrame=requestAnimationFrame(()=>{progressFrame=0;updateProgress();if(selection)captureSelection();});
   $('selection-menu').hidden=true;
 },{passive:true});
 const layoutObserver=new ResizeObserver(()=>scheduleOverview(true));
@@ -286,40 +287,58 @@ function mappedSelectionMeasured(){
   if(!selected?.rangeCount||selected.isCollapsed)return null;
   const range=selected.getRangeAt(0);
   if(!$('document').contains(range.startContainer)||!$('document').contains(range.endContainer))return null;
-  const startElement=range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement;
-  const endElement=range.endContainer.nodeType===1?range.endContainer:range.endContainer.parentElement;
-  const startSpan=startElement.closest('[data-src-start]'),endSpan=endElement.closest('[data-src-start]');
-  const common=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;
-  const spans=startSpan&&endSpan?[startSpan,endSpan]:[...(common.matches('[data-src-start]')?[common]:common.querySelectorAll('[data-src-start]'))].filter(span=>range.intersectsNode(span));
-  if(!spans.length){
+  const mapped=sourceSelection(range,sourceSpans);
+  if(!mapped){
     const startEl=range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement;
     const block=startEl.closest('[data-block-start]');
     if(block&&block.contains(range.endContainer))return {start:Number(block.dataset.blockStart),end:Number(block.dataset.blockEnd),text:selected.toString(),rect:range.getBoundingClientRect(),range:range.cloneRange()};
     return null;
   }
-  const first=spans[0],last=spans.at(-1);
-  const insideOffset=(span,node,offset,fallback)=>{
-    if(!span.contains(node))return fallback;
-    const r=document.createRange();r.selectNodeContents(span);r.setEnd(node,offset);return r.toString().length;
-  };
-  const start=sourceBoundary(first,insideOffset(first,range.startContainer,range.startOffset,0));
-  const end=sourceBoundary(last,insideOffset(last,range.endContainer,range.endOffset,last.textContent.length),true);
+  const start=sourceBoundary(mapped.first,mapped.startOffset);
+  const end=sourceBoundary(mapped.last,mapped.endOffset,true);
   if(end<=start)return null;
-  return {start,end,text:selected.toString(),rect:range.getBoundingClientRect(),range:range.cloneRange()};
+  // Measure the focus endpoint, not thousands of selected line boxes. The menu
+  // stays beside the end the reviewer just dragged, including upward selections.
+  const backwards=selected.focusNode===range.startContainer&&selected.focusOffset===range.startOffset;
+  const span=backwards?mapped.first:mapped.last,walker=document.createTreeWalker(span,NodeFilter.SHOW_TEXT);
+  let node=walker.nextNode(),remaining=backwards?mapped.startOffset:mapped.endOffset;
+  while(node&&remaining>node.length){remaining-=node.length;node=walker.nextNode();}
+  const tip=document.createRange();
+  if(node){tip.setStart(node,Math.max(0,Math.min(node.length-1,remaining-(backwards?0:1))));tip.setEnd(node,Math.min(node.length,tip.startOffset+1));}
+  else tip.selectNodeContents(span);
+  const previous=selection?.range,current=mapped.range;
+  const unchanged=previous&&previous.startContainer===current.startContainer&&previous.startOffset===current.startOffset&&previous.endContainer===current.endContainer&&previous.endOffset===current.endOffset;
+  return {start,end,text:unchanged?selection.text:selected.toString(),rect:tip.getBoundingClientRect(),range:current,backwards};
 }
 
+let selectionTimer;
+function queueSelection(){clearTimeout(selectionTimer);selectionTimer=setTimeout(captureSelection,0);}
+const selectionScrolling=installSelectionScrolling({article:$('document'),scroller:$('scroll-area'),
+  onStart(){selection=null;$('selection-menu').hidden=true;},
+  onEnd(released){queueCodeHighlight();if(released)queueSelection();}});
+
 function captureSelection(){
-  if(editing||composer)return;
+  if(selectionScrolling.dragging||editing||composer)return;
   const found=mappedSelection();
-  if(!found){$('selection-menu').hidden=true;return;}
+  if(!found){selection=null;$('selection-menu').hidden=true;return;}
   selection=found;
+  // A range ending at the next block's first character paints its line break
+  // even though none of that block was selected. Keep the visible selection and
+  // its saved source anchor on the same, clipped endpoints in either direction.
+  const selected=getSelection(),original=selected.getRangeAt(0),clipped=found.range;
+  if(original.startContainer!==clipped.startContainer||original.startOffset!==clipped.startOffset||original.endContainer!==clipped.endContainer||original.endOffset!==clipped.endOffset){
+    if(found.backwards)selected.setBaseAndExtent(clipped.endContainer,clipped.endOffset,clipped.startContainer,clipped.startOffset);
+    else selected.setBaseAndExtent(clipped.startContainer,clipped.startOffset,clipped.endContainer,clipped.endOffset);
+  }
   if(reattachID){safeRun(async()=>{await host('reattach',{id:reattachID,...anchorPayload(found)});reattachID=null;notice('');toast('Feedback reattached. Original provenance preserved.');})();return;}
+  const viewport=$('scroll-area').getBoundingClientRect();
+  if(found.rect.bottom<viewport.top||found.rect.top>viewport.bottom){$('selection-menu').hidden=true;return;}
   const menu=$('selection-menu');menu.hidden=false;
   menu.style.left=`${Math.max(12,Math.min(innerWidth-menu.offsetWidth-12,found.rect.left+(found.rect.width-menu.offsetWidth)/2))}px`;
   menu.style.top=`${Math.max(68,found.rect.top-menu.offsetHeight-9)}px`;
 }
-$('document').addEventListener('mouseup',()=>setTimeout(captureSelection,0));
-$('document').addEventListener('keyup',event=>{if(event.shiftKey)setTimeout(captureSelection,0);});
+$('document').addEventListener('mouseup',event=>{if(event.button===0)queueSelection();});
+$('document').addEventListener('keyup',event=>{if(event.shiftKey)queueSelection();});
 $('selection-menu').addEventListener('mousedown',e=>e.preventDefault());
 
 function anchorPayload(anchor){return {start:anchor.start,end:anchor.end,exact:state.source.slice(anchor.start,anchor.end),sourceHash:state.revision.sha256};}
@@ -418,6 +437,7 @@ $('document').addEventListener('click',event=>{
   const link=event.target.closest('a[href]');
   if(link){
     event.preventDefault();
+    if(!window.getSelection()?.isCollapsed)return;
     if(mode!=='suggest'){
       // .href resolves against the app's bundled HTML, not the Markdown file.
       safeRun(()=>host('openLink',{href:link.getAttribute('href')}))();

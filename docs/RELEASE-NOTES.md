@@ -1,5 +1,14 @@
 A quiet Mac reader for the specs you write with agents.
 
+New in 0.3.4: faster, more precise text selection.
+
+- Drag toward the top or bottom of the reader to scroll at a speed that follows the pointer's distance from the edge.
+- Long code panes scroll within the code before continuing through the document.
+- Selections stop at the intended paragraph; empty overlaps no longer include Markdown from the following heading.
+- The Comment/Suggest menu follows the selection endpoint and remains available after releasing outside the document.
+- Selection anchoring searches the document index instead of scanning all selected spans. Syntax highlighting pauses throughout a drag.
+- Local installation refreshes macOS app registrations and verifies the terminal command points to the installed app.
+
 New in 0.3.3: search highlights remain attached after discarding suggestions or
 preparing code for PDF export. Includes the 0.3.2 performance improvements below.
 

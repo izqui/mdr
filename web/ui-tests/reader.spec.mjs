@@ -338,3 +338,97 @@ test('discarding a suggestion restores live search ranges in the original paragr
   await page.locator('#cancel-edit').click();await expect(page.locator('#edit-bar')).toBeHidden();
   expect(await page.evaluate(()=>[...CSS.highlights.get('mdr-find')].map(r=>({text:r.toString(),connected:r.startContainer.isConnected})))).toEqual([{text:'searchable',connected:true}]);
 });
+
+test('selection ending at the next paragraph boundary excludes that paragraph',async({page})=>{
+  const text='# Boundary review\n\nKeep **this paragraph** and its final sentence.\n\n## Next section\n\nDo not include this next paragraph.\n';
+  await page.evaluate(source=>{
+    window.testState={...window.testState,source,revision:{...window.testState.revision,sha256:'selection-boundary'}};
+    window.mdr.receive(structuredClone(window.testState));
+    const first=document.querySelector('#document p'),next=document.querySelector('#document h2'),range=document.createRange();
+    range.setStart(first.querySelector('[data-src-start]').firstChild,0);range.setEnd(next.querySelector('[data-src-start]').firstChild,0);
+    getSelection().removeAllRanges();getSelection().addRange(range);
+    first.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+  },text);
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Only this paragraph.');await page.locator('#save-comment').click();
+  await expect(page.locator('.card-quote')).toHaveText('Keep **this paragraph** and its final sentence.');
+  expect(await page.evaluate(()=>window.testState.feedback[0].anchor.exact)).toBe('Keep **this paragraph** and its final sentence.');
+});
+
+async function selectionFixture(page,source){
+  await page.evaluate(source=>{
+    getSelection().removeAllRanges();
+    window.testState={...window.testState,source,feedback:[],revision:{...window.testState.revision,sha256:crypto.randomUUID()}};
+    window.mdr.receive(structuredClone(window.testState));
+    document.getElementById('scroll-area').scrollTo({top:0,behavior:'instant'});
+  },source);
+}
+
+for(const direction of ['down','up'])test(`drag selection scrolls ${direction} quickly and stops on release outside the document`,async({page})=>{
+  await selectionFixture(page,'# Long review\n\n'+Array.from({length:70},(_,i)=>`## Section ${i}\n\n${'The worker records progress before delivering a message. '.repeat(10)}\n\n`).join(''));
+  const area=page.locator('#scroll-area'),box=await area.boundingBox();
+  if(direction==='up')await area.evaluate(el=>el.scrollTop=2500);
+  const before=await area.evaluate(el=>el.scrollTop);
+  const start={x:box.x+180,y:box.y+box.height/2},end={x:start.x,y:direction==='down'?box.y+box.height+12:box.y-12};
+  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:12});
+  await expect.poll(async()=>Math.abs(await area.evaluate(el=>el.scrollTop)-before),{timeout:1800}).toBeGreaterThan(650);
+  await page.mouse.up();
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  const stopped=await area.evaluate(el=>el.scrollTop);
+  await page.waitForTimeout(200);
+  expect(Math.abs(await area.evaluate(el=>el.scrollTop)-stopped)).toBeLessThan(3);
+  expect((await page.evaluate(()=>getSelection().toString())).length).toBeGreaterThan(150);
+  const endpoint=await page.evaluate(()=>{
+    const selected=getSelection(),range=document.createRange();
+    range.setStart(selected.focusNode,selected.focusOffset);range.collapse(true);
+    const rect=range.getBoundingClientRect();return {top:rect.top,bottom:rect.bottom};
+  });
+  expect(endpoint.top).toBeLessThan(box.y+box.height+25);
+  expect(endpoint.bottom).toBeGreaterThan(box.y-25);
+  await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Review these paragraphs.');await page.locator('#save-comment').click();
+  const anchor=await page.evaluate(()=>window.testState.feedback[0].anchor);
+  expect(anchor.end).toBeGreaterThan(anchor.start);
+  expect(await page.evaluate(({start,end})=>window.testState.source.slice(start,end),anchor)).toBe(anchor.exact);
+});
+
+test('drag selection scrolls a long code pane before scrolling the document',async({page})=>{
+  await selectionFixture(page,'# Code selection\n\n```typescript\n'+Array.from({length:180},(_,i)=>`const entry_${i} = "delivery ${i}";`).join('\n')+'\n```\n\n## Next block\n\nKeep this paragraph out of the selection.\n');
+  const area=page.locator('#scroll-area'),pane=page.locator('.code-block pre');
+  await area.evaluate(el=>el.scrollTop=180);
+  const box=await pane.boundingBox(),outer=await area.boundingBox(),before=await area.evaluate(el=>el.scrollTop);
+  await page.mouse.move(box.x+55,Math.max(box.y,outer.y)+40);await page.mouse.down();
+  await page.mouse.move(box.x+230,Math.min(box.y+box.height,outer.y+outer.height)-5,{steps:12});
+  await expect.poll(()=>pane.evaluate(el=>el.scrollTop),{timeout:1800}).toBeGreaterThan(600);
+  await page.mouse.up();
+  expect(Math.abs(await area.evaluate(el=>el.scrollTop)-before)).toBeLessThan(3);
+  const selected=await page.evaluate(()=>getSelection().toString());
+  expect(selected).toContain('const entry_');expect(selected).not.toContain('Next block');
+  await expect(page.locator('#selection-menu')).toBeVisible();
+});
+
+test('drag selection through a final list paragraph stops before the next section',async({page})=>{
+  await selectionFixture(page,'# Boundary review\n\n- Keep the **delivery permission** separate from the new scheduling permission. Coordinate their execution so notifications reach the designated queue before workers claim their jobs. The separate steps are intentional.\n\n## Next section\n\nDo not include this paragraph.\n');
+  const points=await page.locator('li p').evaluate(p=>{
+    const a=p.querySelector('[data-src-start]'),b=p.lastElementChild,r=document.createRange();
+    r.setStart(a.firstChild,0);r.setEnd(a.firstChild,1);const start=r.getBoundingClientRect();
+    r.selectNodeContents(b);const last=[...r.getClientRects()].at(-1);
+    return {x:start.left+1,y:start.top+start.height/2,endX:last.right+4,endY:p.getBoundingClientRect().bottom+10};
+  });
+  await page.mouse.move(points.x,points.y);await page.mouse.down();await page.mouse.move(points.endX,points.endY,{steps:12});await page.mouse.up();
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  expect(await page.evaluate(()=>getSelection().toString())).not.toContain('Next section');
+  await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Only this list item.');await page.locator('#save-comment').click();
+  expect(await page.evaluate(()=>window.testState.feedback[0].anchor.exact)).toBe('Keep the **delivery permission** separate from the new scheduling permission. Coordinate their execution so notifications reach the designated queue before workers claim their jobs. The separate steps are intentional.');
+});
+
+test('backward selection clips empty start and end spans without losing formatting',async({page})=>{
+  await selectionFixture(page,'# Boundary review\n\nPrevious paragraph.\n\nKeep **this paragraph** intact.\n\nNext paragraph.\n');
+  await page.evaluate(()=>{
+    const paragraphs=document.querySelectorAll('#document p'),previous=paragraphs[0].firstChild.firstChild,next=paragraphs[2].firstChild.firstChild;
+    getSelection().setBaseAndExtent(next,0,previous,previous.length);
+    paragraphs[1].dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+  });
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Only the middle paragraph.');await page.locator('#save-comment').click();
+  expect(await page.evaluate(()=>window.testState.feedback[0].anchor.exact)).toBe('Keep **this paragraph** intact.');
+});

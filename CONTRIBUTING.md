@@ -11,8 +11,9 @@ npm ci
 npm run build:web
 npm test
 python3 scripts/test-feedback-cli.py
-npx playwright install chromium
+npx playwright install chromium webkit
 npm run test:ui
+npm run test:selection
 
 # Real AppKit/WebKit integration, including PDF export and file watching.
 MDR_INTEGRATION_TEST_DIR="$PWD/work/qa/native" .build/debug/mdr
