@@ -1,5 +1,8 @@
 A quiet Mac reader for the specs you write with agents.
 
+New in 0.3.3: search highlights remain attached after discarding suggestions or
+preparing code for PDF export. Includes the 0.3.2 performance improvements below.
+
 New in 0.3.2: faster reading and reviewing of large, code-heavy documents.
 
 - Syntax colors load near the viewport and wait for fast scrolling to settle.

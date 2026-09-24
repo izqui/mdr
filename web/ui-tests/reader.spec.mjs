@@ -306,7 +306,9 @@ test('offscreen code stays lightweight, selection survives highlighting, and pri
   const anchor=await page.evaluate(()=>window.testState.feedback[0].anchor);
   expect(source.slice(anchor.start,anchor.end)).toBe('unique_34');
   await expect(last).not.toHaveAttribute('data-highlight-pending');
+  await page.locator('#find-button').click();await page.locator('#find-input').fill('unique_0');
   await page.evaluate(()=>window.mdr.prepareForPrint());
+  expect(await page.evaluate(()=>[...CSS.highlights.get('mdr-find')].map(r=>r.toString()))).toEqual(['unique_0']);
   await expect(page.locator('[data-highlight-pending]')).toHaveCount(0);
   expect(await page.locator('.code-block code').last().textContent()).toBe('const unique_34 = "hello";\nconst next_34 = 42;\n');
   expect(await page.evaluate(()=>[...CSS.highlights.get('mdr-comments')].map(r=>r.toString()))).toContain('unique_34');
@@ -325,4 +327,14 @@ test('appearance and replies preserve document nodes, search matches, and unrela
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   expect(await page.evaluate(()=>window.retainedHeading===document.querySelector('#document h1'))).toBe(true);
   await expect(page.locator('.mermaid svg')).toBeVisible();
+});
+
+test('discarding a suggestion restores live search ranges in the original paragraph',async({page})=>{
+  await page.evaluate(()=>{window.testState={...window.testState,source:'# Search review\n\nA searchable passage.\n',feedback:[],revision:{...window.testState.revision,sha256:'search-restoration'}};window.mdr.receive(structuredClone(window.testState));});
+  await page.locator('#find-button').click();await page.locator('#find-input').fill('searchable');
+  await expect(page.locator('#find-count')).toHaveText('1 of 1');
+  await page.locator('#suggest-mode').click();await page.locator('#document p').click();
+  await page.locator('#document [contenteditable=true]').fill('A proposed passage.');
+  await page.locator('#cancel-edit').click();await expect(page.locator('#edit-bar')).toBeHidden();
+  expect(await page.evaluate(()=>[...CSS.highlights.get('mdr-find')].map(r=>({text:r.toString(),connected:r.startContainer.isConnected})))).toEqual([{text:'searchable',connected:true}]);
 });

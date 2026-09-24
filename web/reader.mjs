@@ -134,7 +134,7 @@ async function prepareForPrint(){
     await new Promise(resolve=>setTimeout(resolve,0));
   }
   if(layout!==documentLayout)return prepareForPrint();
-  findTextIndex=null;lastAnnotationSignature='';paintAnnotations();
+  findTextIndex=null;lastAnnotationSignature='';paintAnnotations();if($('find-input').value)updateFind();
   return true;
 }
 function highlightNearbyCode(){
@@ -381,7 +381,7 @@ function startEditing(element){
   // Preserve a mouse-selected caret where possible; keyboard starts at the end.
   if(!editing.isCode){const selected=window.getSelection();if(!selected?.rangeCount||!element.contains(selected.anchorNode)){const r=document.createRange();r.selectNodeContents(element);r.collapse(false);selected.removeAllRanges();selected.addRange(r);}}
 }
-function restoreEdit(edit){edit.input?.remove();edit.element.hidden=false;edit.element.innerHTML=edit.html;edit.element.removeAttribute('contenteditable');rebuildSourceIndex();}
+function restoreEdit(edit){edit.input?.remove();edit.element.hidden=false;edit.element.innerHTML=edit.html;edit.element.removeAttribute('contenteditable');rebuildSourceIndex();if($('find-input').value)updateFind();}
 async function cancelEdit(){if(!editing||draftSession.finishing)return;await draftSession.discard();restoreEdit(editing);editing=null;document.body.classList.remove('editing');$('edit-bar').hidden=true;endDraft();await host('reload');}
 function replacementForEdit(edit){
   let replacement=edit.isCode?edit.input.value:turndown.turndown(edit.element.innerHTML);
