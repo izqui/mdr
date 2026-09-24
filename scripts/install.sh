@@ -36,9 +36,14 @@ if [ -d "$MDR_INSTALL_STAGE/previous.app" ]; then
   mkdir -p work/previous-installations
   mv "$MDR_INSTALL_STAGE/previous.app" "work/previous-installations/$(basename "$MDR_INSTALL_STAGE").app"
 fi
-"$MDR_INSTALL_APP/Contents/MacOS/mdr" --install-cli "$MDR_COMMAND_DIR"
 # Test installations must not change the user's LaunchServices registrations.
 if [ "$MDR_INSTALL_DIR" = "$HOME/Applications" ]; then
   python3 scripts/register-local-app.py "$MDR_INSTALL_APP"
 fi
+"$MDR_INSTALL_APP/Contents/MacOS/mdr" --install-cli "$MDR_COMMAND_DIR"
+python3 - "$MDR_COMMAND_DIR/mdr" "$MDR_INSTALL_APP/Contents/Resources/mdr" <<'PY'
+import os, sys
+if os.path.realpath(sys.argv[1]) != os.path.realpath(sys.argv[2]):
+    raise SystemExit("The mdr command does not resolve to the installed app.")
+PY
 echo "Installed $MDR_INSTALL_APP. Quit and reopen mdr to use the new version."
