@@ -12,6 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["MDR_FOLDER_TEST_DIR"] {
+            NSApp.setActivationPolicy(.accessory)
+            Task { @MainActor in await NativeFolderSmoke.run(owner: self, directory: URL(fileURLWithPath: path)) }
+            return
+        }
         if let path = ProcessInfo.processInfo.environment["MDR_PERFORMANCE_DIR"] {
             NSApp.setActivationPolicy(.regular)
             Task { @MainActor in await NativePerformance.run(owner: self, directory: URL(fileURLWithPath: path)) }
@@ -82,7 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             existing.navigate(to: fragment)
             return existing
         }
-        let reader = try ReaderWindow(url: url, owner: self)
+        let isDirectory = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+        let reader = try ReaderWindow(url: isDirectory ? nil : url, owner: self, workspace: isDirectory ? MarkdownDirectory(url) : nil)
         windows[url.path] = reader
         reader.navigate(to: fragment)
         if showWindow {
@@ -97,8 +103,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, UTType(filenameExtension: "markdown") ?? .plainText, .plainText]
         panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
         panel.prompt = "Read"
         if panel.runModal() == .OK { panel.urls.forEach { open($0) } }
+    }
+
+    @objc func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true
+        panel.prompt = "Open Folder"; panel.message = "Browse Markdown documents in a folder."
+        if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
 
     @objc func command(_ sender: NSMenuItem) {
@@ -126,6 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.addItem(withTitle: "Quit mdr", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let file = NSMenu(title: "File"); let fileItem = NSMenuItem(); fileItem.submenu = file; bar.addItem(fileItem)
         file.addItem(withTitle: "Open…", action: #selector(chooseFile), keyEquivalent: "o").target = self
+        let folderItem = file.addItem(withTitle: "Open Folder…", action: #selector(chooseFolder), keyEquivalent: "o")
+        folderItem.target = self; folderItem.keyEquivalentModifierMask = [.command, .shift]
         let recent = NSMenu(title: "Open Recent")
         let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: ""); recentItem.submenu = recent; file.addItem(recentItem)
         for url in NSDocumentController.shared.recentDocumentURLs.prefix(10) {
@@ -148,7 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addCommand(review, "Show Feedback", "feedback", "r", [.command, .shift])
         addCommand(review, "Reveal Feedback File", "reveal", "r", [.command, .option])
         let view = NSMenu(title: "View"); let viewItem = NSMenuItem(); viewItem.submenu = view; bar.addItem(viewItem)
-        addCommand(view, "Toggle Outline", "outline", "b")
+        addCommand(view, "Toggle Sidebar", "outline", "b")
+        addCommand(view, "Show Files", "files", "e", [.command, .option])
         addCommand(view, "Increase Text Size", "zoomIn", "+")
         addCommand(view, "Decrease Text Size", "zoomOut", "-")
         addCommand(view, "Reset Text Size", "zoomReset", "0")
@@ -172,7 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate {
     let window: NSWindow
     let webView: WKWebView
-    let sourceURL: URL?
+    var sourceURL: URL?
+    let workspace: MarkdownDirectory?
+    var folderObservation: FolderObservation?
+    var windowKey: String { workspace?.root.path ?? sourceURL?.path ?? "welcome" }
     weak var owner: AppDelegate?
     var snapshot: SourceSnapshot
     var review: Review
@@ -193,30 +213,18 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
     var activePrintOperation: NSPrintOperation?
     var preparingPrint = false
 
-    init(url: URL?, owner: AppDelegate) throws {
-        self.owner = owner; sourceURL = url
+    init(url: URL?, owner: AppDelegate, workspace: MarkdownDirectory? = nil) throws {
+        self.owner = owner; sourceURL = url; self.workspace = workspace
         if let url {
-            guard !url.lastPathComponent.hasSuffix(".feedback.md") else { throw MDRError.invalidDocument("Open the original Markdown document. mdr will load its .feedback.md automatically.") }
-            snapshot = try SourceSnapshot.read(url)
+            let loaded = try LoadedDocument(url: url)
+            snapshot = loaded.snapshot; review = loaded.review; diskHash = loaded.diskHash; notice = loaded.notice
+        } else if workspace != nil {
+            snapshot = SourceSnapshot(text: "# A folder of ideas\n\nChoose a Markdown document in the sidebar to start reading. Expand folders to explore, or use the arrow keys to move through the tree.\n\nOther files stay visible, dimmed. Your comments and suggestions stay beside each original document.\n")
+            review = Review(sourcePath: "Folder", snapshot: snapshot)
         } else {
             let guide = readerResources.url(forResource: "welcome", withExtension: "md", subdirectory: "Web")!
             snapshot = try SourceSnapshot.read(guide)
-        }
-        review = Review(sourcePath: url?.path ?? "Welcome", snapshot: snapshot)
-        if let url, FileManager.default.fileExists(atPath: ReviewFile.url(for: url).path) {
-            let data = try Data(contentsOf: ReviewFile.url(for: url))
-            review = try ReviewFile.decode(data)
-            guard review.sourcePath == url.path || review.revision.sha256 == snapshot.revision.sha256 || !FileManager.default.fileExists(atPath: review.sourcePath) else {
-                throw MDRError.invalidFeedback("This feedback file belongs to another source document: \(review.sourcePath). Rename one of the documents so each has its own feedback file.")
-            }
-            // A moved document and its sidecar can travel together.
-            review.sourcePath = url.path
-            diskHash = sha256(data)
-            if review.revision.sha256 != snapshot.revision.sha256 {
-                let count = review.rebase(to: snapshot)
-                diskHash = try ReviewFile.save(review, to: ReviewFile.url(for: url), expectedDiskHash: diskHash)
-                notice = count == 0 ? "Source updated. Your feedback followed the text." : "Source updated. \(count) \(count == 1 ? "note needs" : "notes need") a new anchor."
-            }
+            review = Review(sourcePath: "Welcome", snapshot: snapshot)
         }
         snapshots[snapshot.revision.sha256] = snapshot
         let config = WKWebViewConfiguration()
@@ -229,7 +237,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         webView = WKWebView(frame: .zero, configuration: config)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
-        window.title = url?.lastPathComponent ?? "mdr"
+        window.title = url?.lastPathComponent ?? workspace?.root.lastPathComponent ?? "mdr"
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(calibratedWhite: 0.98, alpha: 1)
         window.minSize = NSSize(width: 780, height: 560)
@@ -248,16 +256,38 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         }
         #endif
         webView.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
+        if let workspace {
+            folderObservation = FolderObservation(directory: workspace) { [weak self] path in
+                self?.call("window.mdr.directoryChanged", value: path)
+            }
+        }
         if let url { watch(url.deletingLastPathComponent()); watchFiles() }
+    }
+
+    func selectDocument(_ url: URL, fragment: String? = nil) throws {
+        guard let workspace, let path = workspace.relativePath(for: url) else { throw MDRError.invalidDocument("This document is outside the open folder.") }
+        let target = try workspace.document(path)
+        if target == sourceURL { navigate(to: fragment); return }
+        guard !hasDraft || draftIsSaved else { throw MDRError.invalidDocument("Your latest feedback has not saved yet. Wait for it to save before changing documents.") }
+        guard !preparingPrint, activePrintOperation == nil else { throw MDRError.invalidDocument("Wait for PDF export to finish before changing documents.") }
+        let loaded = try LoadedDocument(url: target)
+        watcher?.cancel(); watcher = nil; fileWatchers.forEach { $0.cancel() }; fileWatchers.removeAll()
+        debounce?.cancel(); debounce = nil
+        sourceURL = target; snapshot = loaded.snapshot; review = loaded.review; diskHash = loaded.diskHash
+        snapshots = [snapshot.revision.sha256: snapshot]; notice = loaded.notice; lastWarning = nil
+        hasDraft = false; draftIsSaved = false; pendingFragment = nil
+        window.title = "\(target.lastPathComponent) — \(workspace.root.lastPathComponent)"
+        watch(target.deletingLastPathComponent()); watchFiles(); sendState(); navigate(to: fragment)
+        if window.isVisible { NSDocumentController.shared.noteNewRecentDocumentURL(workspace.root) }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { confirmDiscard() }
     func windowWillClose(_ notification: Notification) {
-        watcher?.cancel(); fileWatchers.forEach { $0.cancel() }; debounce?.cancel()
+        watcher?.cancel(); fileWatchers.forEach { $0.cancel() }; debounce?.cancel(); folderObservation?.stopAll()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "mdr")
-        owner?.windows.removeValue(forKey: sourceURL?.path ?? "welcome")
+        owner?.windows.removeValue(forKey: windowKey)
     }
-    func windowDidBecomeKey(_ notification: Notification) { refreshFromDisk() }
+    func windowDidBecomeKey(_ notification: Notification) { refreshFromDisk(); if ready, workspace != nil { call("window.mdr.directoryChanged", value: "") } }
 
     func confirmDiscard() -> Bool {
         guard hasDraft && !draftIsSaved else { return true }
@@ -346,12 +376,33 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
                 ready = true; sendState()
                 if let fragment = pendingFragment { pendingFragment = nil; navigate(to: fragment) }
             case "open": owner?.chooseFile()
+            case "openFolder": owner?.chooseFolder()
+            case "listDirectory":
+                guard let workspace, let requestID else { throw MDRError.invalidDocument("Open a folder first.") }
+                let path = data["path"] as? String ?? ""
+                Task { @MainActor [weak self] in
+                    do {
+                        let entries = try await Task.detached(priority: .userInitiated) { try workspace.contents(path) }.value
+                        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entries))
+                        self?.folderObservation?.watch(path)
+                        self?.call("window.mdr.resolve", arguments: [requestID, ["ok": true, "entries": json]])
+                    } catch {
+                        self?.call("window.mdr.resolve", arguments: [requestID, ["ok": false, "error": error.localizedDescription]])
+                    }
+                }
+                return
+            case "unwatchDirectory":
+                if let path = data["path"] as? String, !path.isEmpty { folderObservation?.stop(path) }
+            case "openWorkspaceFile":
+                guard let workspace, let path = data["path"] as? String else { throw MDRError.invalidDocument("Open a folder first.") }
+                try selectDocument(workspace.document(path))
             case "openLink":
                 guard let href = data["href"] as? String else { break }
                 switch try MarkdownLink.resolve(href, from: sourceURL) {
                 case .heading(let fragment): navigate(to: fragment)
                 case .document(let url, let fragment):
-                    try owner?.openDocument(url, fragment: fragment, showWindow: window.isVisible)
+                    if let workspace, workspace.contains(url) { try selectDocument(url, fragment: fragment) }
+                    else { try owner?.openDocument(url, fragment: fragment, showWindow: window.isVisible) }
                 case .external(let url): NSWorkspace.shared.open(url)
                 }
             case "exportPDF": choosePDFDestination()
@@ -544,13 +595,17 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         do {
             let revision = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.revision))
             let items = try JSONSerialization.jsonObject(with: JSONEncoder().encode(review.feedback))
-            let value: [String: Any] = ["source": snapshot.text, "revision": revision, "feedback": items,
-                "fileName": sourceURL?.lastPathComponent ?? "The mdr field guide", "filePath": sourceURL?.path ?? "",
+            var value: [String: Any] = ["source": snapshot.text, "revision": revision, "feedback": items,
+                "fileName": sourceURL?.lastPathComponent ?? workspace?.root.lastPathComponent ?? "The mdr field guide", "filePath": sourceURL?.path ?? "",
                 "feedbackPath": sourceURL.map { ReviewFile.url(for: $0).path } ?? "", "author": reviewerName,
                 "hasSidecar": diskHash != nil, "isWelcome": sourceURL == nil, "notice": notice ?? "",
                 "theme": UserDefaults.standard.string(forKey: "theme") ?? "paper",
                 "documentCreatedAt": snapshot.createdAt ?? "",
                 "fontSize": UserDefaults.standard.object(forKey: "fontSize") as? Int ?? 18]
+            if let workspace {
+                value["workspace"] = ["path": workspace.root.path, "name": workspace.root.lastPathComponent,
+                                      "selectedPath": sourceURL.flatMap { workspace.relativePath(for: $0) } ?? ""]
+            }
             call("window.mdr.receive", value: value)
             notice = nil
         } catch { owner?.show(error) }

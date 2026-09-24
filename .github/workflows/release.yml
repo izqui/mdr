@@ -36,6 +36,7 @@ jobs:
           MDR_INTEGRATION_TEST_DIR="$PWD/work/qa/native" .build/debug/mdr
           MDR_LINK_TEST_DIR="$PWD/work/qa/links" .build/debug/mdr
           MDR_LIVE_TEST_DIR="$PWD/work/qa/live" .build/debug/mdr
+          MDR_FOLDER_TEST_DIR="$PWD/work/qa/folders" .build/debug/mdr
       - run: npm run build
       - run: python3 scripts/test-distribution.py
       - name: Package universal app, DMG, and skill

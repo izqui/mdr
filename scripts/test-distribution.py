@@ -28,6 +28,7 @@ web = next(app.rglob('Web/index.html')).parent
 for asset in ['reader.js', 'diagrams.js', 'reader.css']:
     assert (web / asset).stat().st_size > 0, f'Missing standalone reader asset: {asset}'
 assert info['CFBundleShortVersionString'] == json.loads((project / 'package.json').read_text())['version']
+assert any('public.folder' in item.get('LSItemContentTypes', []) for item in info['CFBundleDocumentTypes'])
 assert 'mdr feedback watch' in run(binary, '--help')
 guide = run(binary, '--skill')
 assert guide.strip() == (project / 'AGENT-REVIEW.md').read_text().strip()
@@ -37,6 +38,16 @@ command = command_dir / 'mdr'
 assert command.is_symlink()
 assert 'mdr feedback watch' in run(command, '--help')
 assert guide == run(command, 'skill')
+# Exercise the actual installed launcher without bringing a window to the front.
+fake_tools = root / 'fake tools'
+fake_tools.mkdir()
+open_log = root / 'open-arguments.txt'
+fake_open = fake_tools / 'open'
+fake_open.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$MDR_OPEN_ARGUMENTS"\n')
+fake_open.chmod(0o755)
+launch_env = dict(os.environ, PATH=str(fake_tools) + os.pathsep + os.environ['PATH'], MDR_OPEN_ARGUMENTS=str(open_log))
+subprocess.run([str(command), str(root)], cwd=root, env=launch_env, check=True, timeout=15)
+assert open_log.read_text().splitlines() == ['-a', str(app), '--', str(root)]
 run(command, 'skill', '--invalid', success=False)
 skill = root / 'agent skills/mdr'
 run(command, 'skill', '--install', skill)

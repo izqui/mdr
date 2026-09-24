@@ -23,13 +23,34 @@ mdr spec.md
 ## Made for the part where you think
 
 - **Reading comes first.** Comfortable typography, a heading outline, a minimap, search, and paper, light, dark, or system appearance. File creation and update times sit quietly above the heading.
+- **A whole folder, one reading space.** Open a specs directory, expand nested folders, and move between documents without opening more windows. Unsupported files stay visible, dimmed.
 - **Code gets room.** Syntax highlighting, line numbers, copy, wrapping, expand controls, and precise comments or suggestions inside code blocks.
 - **Diagrams belong in the doc.** Mermaid renders locally, alongside tables, lists, links, and prose.
 - **Feedback stays in context.** Highlight to comment. Edit a passage to suggest a replacement. Reply, correct, and edit in threads.
 - **Your agent can talk back.** Posted comments and agent replies travel through the same file. Both sides see updates live.
-- **Take it with you.** Export a clean PDF with **⌘⇧P**. Follow relative Markdown links into other mdr windows.
+- **Take it with you.** Export a clean PDF with **⌘⇧P**. Follow relative Markdown links; links inside an open folder stay in the same window.
 
 Native AppKit shell, system WebKit, no bundled browser runtime. No account, subscription, server, telemetry, or API key. The reader and review tools work offline; your coding agent is separate.
+
+## Read a folder
+
+```sh
+mdr ./specs
+```
+
+Or choose **File → Open Folder…** (**⌘⇧O**). Expand folders in the **Files** tab,
+click a Markdown document, and switch to **Outline** for its headings. Arrow keys
+navigate the file tree; Return opens the selected document. **⌘B** hides or shows
+the sidebar.
+
+Only expanded folders are loaded and watched, so a large project can stay folded
+away. New and removed files appear automatically. Other file types and feedback
+sidecars are dimmed; open the original document to read its review. Hidden items
+are omitted, and symbolic links are shown but not followed.
+
+Switching documents saves an unfinished comment or suggestion as a draft. When
+you return, choose **Continue draft** in Feedback. Each document retains its own
+review file and reading position.
 
 ## The source stays yours
 
@@ -77,6 +98,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```sh
 mdr "path/to/My spec.md"
+mdr "path/to/specs"
 mdr --help
 mdr skill
 ```

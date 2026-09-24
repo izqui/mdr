@@ -96,3 +96,24 @@
 
 /* Controls and labels never become part of a dragged document selection. */
 .code-label,.diagram-label,.document-eyebrow,.document-dates,.document-end{user-select:none;-webkit-user-select:none}
+
+/* A folder shares the sidebar with the current document outline. */
+.sidebar-pane{display:flex;flex-direction:column;flex:1;min-height:0}
+.sidebar-tabs{display:flex;gap:3px;background:var(--line);padding:3px;border-radius:6px;margin:-10px 3px 20px}
+.sidebar-tabs button{flex:1;padding:6px 8px;border-radius:4px;font-size:11px;color:var(--muted)}
+.sidebar-tabs button[aria-selected=true]{background:var(--paper);color:var(--ink);box-shadow:0 1px 2px #00000009}
+.folder-heading{display:flex;align-items:center;gap:8px;padding:0 6px 12px;font-size:11px;font-weight:550}
+#folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.folder-heading button{font-size:18px;color:var(--muted)}
+.file-tree,.file-tree ul{list-style:none;padding:0;margin:0}.file-tree{overflow:auto;flex:1;min-height:0;padding:0 2px 20px;scrollbar-width:thin}
+.file-row{display:flex;align-items:center;gap:5px;padding:6px 6px 6px calc(2px + var(--depth)*13px);border-radius:5px;min-height:29px;cursor:pointer}
+.file-chevron,.file-icon{display:flex;width:14px;height:16px;flex-shrink:0;color:var(--muted)}.file-chevron{width:11px}.file-row svg{width:100%;height:100%}
+.file-label{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.file-tree [role=treeitem]{outline:none}.file-row:hover{background:var(--line)}
+.file-tree [aria-expanded=true]>.file-row>.file-chevron{transform:rotate(90deg)}
+.file-tree [aria-selected=true]>.file-row{background:var(--accent-soft);color:var(--accent-dark)}
+.file-tree [role=treeitem]:focus-visible>.file-row{outline:2px solid var(--accent);outline-offset:-2px}
+.file-tree [aria-disabled=true]>.file-row{color:var(--subtle);opacity:.65;cursor:default}
+.file-tree [aria-disabled=true]>.file-row:hover{background:none}.file-tree [aria-disabled=true] .file-icon{color:inherit}
+.file-tree-message{font-size:11px;line-height:1.5;color:var(--muted);padding:8px;overflow-wrap:anywhere}.file-tree-message button{display:block;padding:6px 0;color:var(--accent)}
+.open-folder-button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;font-size:10px;padding:12px 0 0;color:var(--muted)}.open-folder-button span{color:var(--subtle);font-size:9px}
+@media print{.sidebar-tabs,.sidebar-pane,.open-folder-button{display:none!important}}

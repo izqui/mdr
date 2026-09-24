@@ -25,7 +25,10 @@ export class FeedbackAutosave {
     }catch(error){this.next=null;this.status('error');throw error;}
   }
   async discard(){
-    if(this.running)await this.running;
-    if(this.savedBody!==null&&this.savedDraft)await this.send(this.discardAction,{...this.payload,baseBody:this.savedBody});
+    this.finishing=true;
+    try{
+      if(this.running)await this.running;
+      if(this.savedBody!==null&&this.savedDraft)await this.send(this.discardAction,{...this.payload,baseBody:this.savedBody});
+    }finally{this.finishing=false;}
   }
 }

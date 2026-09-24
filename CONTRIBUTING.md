@@ -19,6 +19,7 @@ npm run test:selection
 MDR_INTEGRATION_TEST_DIR="$PWD/work/qa/native" .build/debug/mdr
 MDR_LINK_TEST_DIR="$PWD/work/qa/links" .build/debug/mdr
 MDR_LIVE_TEST_DIR="$PWD/work/qa/live" .build/debug/mdr
+MDR_FOLDER_TEST_DIR="$PWD/work/qa/folders" .build/debug/mdr
 
 npm run build
 python3 scripts/test-distribution.py

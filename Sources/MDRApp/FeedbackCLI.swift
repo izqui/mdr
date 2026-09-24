@@ -4,6 +4,7 @@ import MDRCore
 enum FeedbackCLI {
     static let usage = """
     mdr FILE                                  Open a Markdown file in the Mac reader
+    mdr DIRECTORY                             Browse a folder of Markdown files
     mdr --help                                Show this help
     mdr skill                                 Print the complete agent workflow and file format
     mdr skill --install DIRECTORY             Install the agent skill in a new folder

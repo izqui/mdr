@@ -1,3 +1,4 @@
+import {FileTree} from './file-tree.mjs';
 import {measure,performanceSnapshot} from './performance.mjs';
 import {sourceSelection,installSelectionScrolling} from './selection.mjs';
 import {FeedbackAutosave} from './autosave.mjs';
@@ -21,7 +22,9 @@ const md=createMarkdown({highlight:false}), turndown=new TurndownService({headin
 let state=null,headings=[],mode='read',selection=null,editing=null,composer=false,pendingState=null,filter='open',activeFeedback=null,reattachID=null,renderID=0;
 let theme='paper',fontSize=18,toastTimer,findMatches=[],findIndex=0;
 let documentLayout=Promise.resolve(),headingJump=0;
-let draftSession=null;
+let draftSession=null,navigatingDocument=false;
+const documentPositions=new Map();
+let sidebarTab='files';
 let sourceSpans=[],sourceBlocks=[],blockMaxEnds=[],findTextIndex=null;
 let headingOffsets=[],tocLinks=new Map(),activeHeading=null,overviewFrame=0,progressFrame=0;
 let overviewGeometry=[],geometryDirty=true,lastAnnotationSignature='';
@@ -55,12 +58,50 @@ function toast(message) {clearTimeout(toastTimer);$('toast').textContent=message
 function notice(message,warning=false) {$('notice-text').textContent=message;$('notice').hidden=!message;$('notice').classList.toggle('warning',warning);}
 function safeRun(fn){return (...args)=>Promise.resolve().then(()=>fn(...args)).catch(error=>notice(error.message,true));}
 
+const fileTree=new FileTree({element:$('file-tree'),host,open:safeRun(path=>openWorkspaceFile(path))});
+function showSidebarTab(tab){
+  sidebarTab=tab;
+  const files=!!state?.workspace&&tab==='files';
+  $('files-pane').hidden=!files;$('outline-pane').hidden=files;
+  $('files-tab').setAttribute('aria-selected',String(files));$('outline-tab').setAttribute('aria-selected',String(!files));
+  $('files-tab').tabIndex=files?0:-1;$('outline-tab').tabIndex=files?-1:0;
+}
+function resetDocumentInteraction(){
+  editing=null;composer=false;draftSession=null;pendingState=null;selection=null;activeFeedback=null;reattachID=null;filter='open';findIndex=0;
+  document.body.classList.remove('editing');$('edit-bar').hidden=true;$('composer').hidden=true;$('selection-menu').hidden=true;
+  $('comment-text').readOnly=false;$('save-comment').disabled=false;$('save-edit').disabled=false;
+  window.getSelection()?.removeAllRanges();notice('');setMode('read');
+}
+async function navigateDocument(action,data){
+  if(navigatingDocument)return;
+  if($('export-pdf').disabled)throw new Error('Wait for PDF export to finish before changing documents.');
+  if(draftSession?.finishing)throw new Error('Wait for your current feedback to finish saving.');
+  navigatingDocument=true;$('file-tree').setAttribute('aria-busy','true');
+  const draft=draftSession,edit=editing;
+  try{
+    if(draft){
+      const body=edit?replacementForEdit(edit):$('comment-text').value;
+      draft.finishing=true;if(edit){if(edit.isCode)edit.input.readOnly=true;else edit.element.contentEditable='false';}else $('comment-text').readOnly=true;
+      if(draft.running||body!==draft.savedBody&&body!=='')await draft.save(body);
+      // Empty changes to an existing draft also have to reach disk.
+      else if(draft.savedBody!==null&&body!==draft.savedBody)await draft.save(body);
+    }
+    await host(action,data);
+  }finally{
+    if(draft&&draftSession===draft){draft.finishing=false;if(edit){if(edit.isCode)edit.input.readOnly=false;else edit.element.contentEditable='true';}else $('comment-text').readOnly=false;}
+    navigatingDocument=false;$('file-tree').removeAttribute('aria-busy');
+  }
+}
+function openWorkspaceFile(path){if(path===state?.workspace?.selectedPath)return;return navigateDocument('openWorkspaceFile',{path});}
+
 window.mdr={
+  directoryChanged:path=>fileTree.changed(path),
   performance:performanceSnapshot,
   prepareForPrint,
   resolve(id,result){const p=pendingRequests.get(id);if(!p)return;clearTimeout(p.timeout);pendingRequests.delete(id);result.ok?p.resolve(result):p.reject(Object.assign(new Error(result.error||'Could not save feedback.'),{retryable:result.retryable}));},
   receive(value){
     if(window.__mdrProfile)window.__mdrLastState=value;
+    if(state&&state.filePath!==value.filePath){resetDocumentInteraction();applyState(value);return;}
     const knownReplies=new Set(state?.feedback.flatMap(item=>(item.replies??[]).map(reply=>reply.id))??[]);
     if(state&&value.feedback.some(item=>(item.replies??[]).some(reply=>!reply.isDraft&&!knownReplies.has(reply.id))))toast('New reply in your feedback.');
     if(editing||composer){
@@ -74,7 +115,7 @@ window.mdr={
   exported(message){toast(message);},
   navigateToHeading,
   command(action){
-    const actions={find:toggleFind,comment:()=>openComment(),suggest:()=>setMode(mode==='read'?'suggest':'read'),feedback:()=>toggleFeedback(),outline:toggleOutline,
+    const actions={find:toggleFind,comment:()=>openComment(),suggest:()=>setMode(mode==='read'?'suggest':'read'),feedback:()=>toggleFeedback(),outline:toggleOutline,files:()=>{if(state?.workspace){document.body.classList.remove('outline-hidden');showSidebarTab('files');}else host('openFolder');},
       reveal:()=>host('reveal'),exportPDF:()=>exportPDF(false),print:()=>exportPDF(true),zoomIn:()=>zoom(1),zoomOut:()=>zoom(-1),zoomReset:()=>zoom(0),settings:toggleSettings};
     if(actions[action])safeRun(actions[action])();
   }
@@ -82,12 +123,17 @@ window.mdr={
 
 function applyStateMeasured(value){
   const previousHash=state?.revision.sha256,previousScroll=$('scroll-area').scrollTop;
+  const changedDocument=state?.filePath!==value.filePath;
+  if(changedDocument&&state?.filePath)documentPositions.set(state.filePath,previousScroll);
   state=value;
+  $('sidebar-tabs').hidden=!value.workspace;
+  if(value.workspace){$('folder-name').textContent=value.workspace.name;$('folder-name').title=value.workspace.path;fileTree.update(value.workspace);}
+  showSidebarTab(sidebarTab);
   if(value.theme)theme=value.theme;if(value.fontSize)fontSize=value.fontSize;
   applyTheme();applySize();
   $('file-name').textContent=value.fileName;$('file-name').title=value.filePath;
-  $('document-kind').textContent=value.isWelcome?'A QUIETER WAY TO REVIEW':'MARKDOWN DOCUMENT';
-  const sourceChanged=previousHash!==value.revision.sha256 || !$('document').childElementCount;
+  $('document-kind').textContent=value.workspace&&value.isWelcome?'YOUR FOLDER':value.isWelcome?'A QUIETER WAY TO REVIEW':'MARKDOWN DOCUMENT';
+  const sourceChanged=changedDocument || previousHash!==value.revision.sha256 || !$('document').childElementCount;
   const words=sourceChanged?value.source.trim().split(/\s+/).filter(Boolean).length:null;
   if(sourceChanged)$('reading-time').textContent=`${Math.max(1,Math.ceil(words/220))} min read`;
   renderDocumentDates(value);
@@ -95,7 +141,10 @@ function applyStateMeasured(value){
   $('document-status').textContent=value.hasSidecar?'Feedback saved beside your document':value.isWelcome?'Welcome to mdr':'Original document · read only';
   $('settings-toggle').textContent=initials(value.author);$('settings-toggle').title=`${value.author} · Appearance and reviewer`;
   $('reviewer-name').value=value.author;$('composer-author').textContent=value.author;$('composer-avatar').textContent=initials(value.author);
-  $('welcome-cta').hidden=!value.isWelcome;
+  $('welcome-cta').hidden=!value.isWelcome||!!value.workspace;
+  $('reading-time').hidden=!!value.workspace&&value.isWelcome;
+  $('word-count').hidden=!!value.workspace&&value.isWelcome;
+  if(value.workspace&&value.isWelcome){$('file-name').textContent=value.workspace.name;$('document-status').textContent='Choose a Markdown document';}
   if(sourceChanged){
     const rendered=measure('markdown',()=>renderMarkdown(md,value.source));headings=rendered.headings;
     measure('dom',()=>{$('document').innerHTML=rendered.html;});
@@ -105,7 +154,7 @@ function applyStateMeasured(value){
       if(next?.tagName==='P'&&next.textContent.length<1400){const group=document.createElement('div');group.className='print-lead';heading.before(group);group.append(heading,next);}
     }
     rebuildSourceIndex();renderTOC();observeCode();
-    $('scroll-area').scrollTop=previousHash?previousScroll:0;
+    $('scroll-area').scrollTop=changedDocument?(documentPositions.get(value.filePath)??0):previousHash?previousScroll:0;
     documentLayout=Promise.all([renderDiagrams(++renderID),loadImages()]);
   }
   renderFeedback();paintAnnotations();if(sourceChanged)updateFind();
@@ -440,7 +489,7 @@ $('document').addEventListener('click',event=>{
     if(!window.getSelection()?.isCollapsed)return;
     if(mode!=='suggest'){
       // .href resolves against the app's bundled HTML, not the Markdown file.
-      safeRun(()=>host('openLink',{href:link.getAttribute('href')}))();
+      safeRun(()=>state.workspace?navigateDocument('openLink',{href:link.getAttribute('href')}):host('openLink',{href:link.getAttribute('href')}))();
       return;
     }
   }
@@ -600,6 +649,7 @@ function paintFind(){
 function nextFind(direction){if(!findMatches.length)return;findIndex=(findIndex+direction+findMatches.length)%findMatches.length;paintFind();const r=findMatches[findIndex];const node=r.startContainer.parentElement;node.scrollIntoView({block:'center',behavior:'smooth'});}
 
 const handlers={
+  'open-folder':()=>host('openFolder'),'files-tab':()=>showSidebarTab('files'),'outline-tab':()=>showSidebarTab('outline'),'refresh-folder':()=>fileTree.refresh(),
   'open-file':()=>host('open'),'open-small':()=>host('open'),'welcome-open':()=>host('open'),'outline-toggle':toggleOutline,'export-pdf':()=>exportPDF(false),
   'read-mode':()=>setMode('read'),'suggest-mode':()=>setMode('suggest'),'feedback-toggle':()=>toggleFeedback(),'feedback-close':()=>toggleFeedback(false),
   'comment-selection':()=>openComment(),'cancel-comment':cancelComment,'save-comment':saveComment,
@@ -612,6 +662,10 @@ const handlers={
 };
 for(const[id,handler]of Object.entries(handlers))$(id).addEventListener('click',safeRun(handler));
 document.querySelectorAll('.theme-options button').forEach(button=>button.addEventListener('click',safeRun(()=>setTheme(button.dataset.theme))));
+$('sidebar-tabs').addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+  event.preventDefault();showSidebarTab(sidebarTab==='files'?'outline':'files');$(sidebarTab==='files'?'files-tab':'outline-tab').focus();
+});
 $('find-input').addEventListener('input',()=>{findIndex=0;updateFind();if(findMatches.length){findIndex=findMatches.length-1;nextFind(1);}});
 $('find-input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();nextFind(e.shiftKey?-1:1);}});
 document.addEventListener('keydown',event=>{
@@ -633,7 +687,7 @@ async function previewHost(action,data,id){
     const hash=[...new Uint8Array(bytes)].map(x=>x.toString(16).padStart(2,'0')).join('');
     window.mdr.receive({source,revision:{sha256:hash,modifiedAt:new Date().toISOString(),byteLength:source.length},feedback:[],author:'You',fileName:'The mdr field guide',filePath:'',isWelcome:true,hasSidecar:false});
     notice('Web preview · Open the Mac app to review your own files.');
-  }else if(action==='open')toast('Open mdr.app to choose a Markdown file.');
+  }else if(action==='open'||action==='openFolder')toast('Open mdr.app to choose a Markdown file or folder.');
   else if(action==='openLink'){
     if(data.href.startsWith('#'))navigateToHeading(decodeURIComponent(data.href.slice(1)));
     else if(/^(https?:|mailto:)/i.test(data.href))window.open(data.href,'_blank','noopener');

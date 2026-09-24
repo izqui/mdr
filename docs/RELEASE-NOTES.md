@@ -1,5 +1,14 @@
 A quiet Mac reader for the specs you write with agents.
 
+New in 0.4.0: open a whole folder of specs.
+
+- Run `mdr ./specs` or choose File → Open Folder… (⌘⇧O).
+- Expand nested folders in Files, with keyboard navigation and dimmed unsupported files.
+- Switch between Files and the current document's Outline in the same sidebar.
+- Files load as you expand folders; additions and removals appear live.
+- Switch documents in one window, retaining reading positions and saved feedback drafts.
+- Relative Markdown links within the folder keep its browsing context.
+
 New in 0.3.4: faster, more precise text selection.
 
 - Drag toward the top or bottom of the reader to scroll at a speed that follows the pointer's distance from the edge.

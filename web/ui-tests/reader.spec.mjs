@@ -432,3 +432,107 @@ test('backward selection clips empty start and end spans without losing formatti
   await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Only the middle paragraph.');await page.locator('#save-comment').click();
   expect(await page.evaluate(()=>window.testState.feedback[0].anchor.exact)).toBe('Keep **this paragraph** intact.');
 });
+
+async function folderFixture(page){
+  await page.evaluate(()=>{
+    const entry=(name,path,isDirectory=false,enabled=true)=>({name,path,isDirectory,enabled,reason:enabled?null:'Unsupported file'});
+    window.folderEntries={'':[entry('design','design',true),entry('empty','empty',true),entry('README.md','README.md'),entry('Same text.md','Same text.md'),entry('helper.py','helper.py',false,false),entry('README.feedback.md','README.feedback.md',false,false)],
+      design:[entry('nested','design/nested',true),entry('API #1.md','design/API #1.md')],empty:[],
+      'design/nested':[entry('Details.markdown','design/nested/Details.markdown')]};
+    const original=window.webkit.messageHandlers.mdr.postMessage;
+    const make=(path,text)=>({...window.testState,source:text,fileName:path.split('/').at(-1),filePath:'/specs/'+path,feedback:[],hasSidecar:false,revision:{...window.testState.revision,sha256:text},workspace:{path:'/specs',name:'specs',selectedPath:path}});
+    window.folderDocuments={'README.md':make('README.md','# Overview\n\nReview this paragraph.\n'),
+      'Same text.md':make('Same text.md','# Overview\n\nReview this paragraph.\n'),
+      'design/API #1.md':make('design/API #1.md','# API contract\n\nRead the contract.\n'),
+      'design/nested/Details.markdown':make('design/nested/Details.markdown','# Implementation details\n\nA nested document.\n')};
+    window.webkit.messageHandlers.mdr.postMessage=message=>{
+      if(!['listDirectory','unwatchDirectory','openWorkspaceFile'].includes(message.action)){original(message);return;}
+      window.testMessages.push(message);
+      setTimeout(()=>{
+        if(message.action==='listDirectory'){window.mdr.resolve(message.requestId,{ok:true,entries:window.folderEntries[message.path]??[]});return;}
+        if(message.action==='openWorkspaceFile'){
+          if(window.rejectFolderOpen){window.mdr.resolve(message.requestId,{ok:false,error:'This file cannot be read.'});return;}
+          if(window.testState.workspace?.selectedPath)window.folderDocuments[window.testState.workspace.selectedPath]=structuredClone(window.testState);
+          window.testState=structuredClone(window.folderDocuments[message.path]);window.mdr.receive(structuredClone(window.testState));
+        }
+        window.mdr.resolve(message.requestId,{ok:true});
+      },20);
+    };
+    window.testState=structuredClone(window.folderDocuments['README.md']);window.mdr.receive(structuredClone(window.testState));
+  });
+  await expect(page.locator('#file-tree [data-path="README.md"]')).toBeVisible();
+}
+
+test('folder browser loads nested folders lazily, dims other files and supports keyboard navigation',async({page})=>{
+  await folderFixture(page);
+  await expect(page.locator('#files-tab')).toHaveAttribute('aria-selected','true');
+  expect(await page.evaluate(()=>window.testMessages.filter(m=>m.action==='listDirectory').map(m=>m.path))).toEqual(['']);
+  await expect(page.locator('#file-tree [data-path="helper.py"]')).toHaveAttribute('aria-disabled','true');
+  await expect(page.locator('#file-tree [data-path="README.feedback.md"]')).toHaveAttribute('aria-disabled','true');
+  await page.locator('#file-tree [data-path="helper.py"] > .file-row').click();
+  expect(await page.evaluate(()=>window.testMessages.filter(m=>m.action==='openWorkspaceFile').length)).toBe(0);
+  const design=page.locator('#file-tree [data-path="design"]');await design.focus();await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#file-tree [data-path="design/nested"]')).toBeVisible();
+  await page.keyboard.press('ArrowRight');await expect(page.locator('#file-tree [data-path="design/nested"]')).toBeFocused();
+  await page.keyboard.press('ArrowRight');await expect(page.locator('#file-tree [data-path="design/nested/Details.markdown"]')).toBeVisible();
+  await page.keyboard.press('ArrowRight');await page.keyboard.press('Enter');
+  await expect(page.locator('#document h1')).toHaveText('Implementation details');
+  await expect(page.locator('#file-tree [data-path="design/nested/Details.markdown"]')).toHaveAttribute('aria-selected','true');
+  await page.locator('#outline-tab').click();await expect(page.locator('#toc')).toBeVisible();await expect(page.locator('#toc')).toContainText('Implementation details');
+  await page.locator('#files-tab').click();await expect(page.locator('#file-tree [data-path="design/nested/Details.markdown"]')).toBeVisible();
+  await page.screenshot({path:'work/folder/browser.png'});
+});
+
+test('folder switching saves a comment draft and keeps identical documents separate',async({page})=>{
+  await folderFixture(page);
+  await selectText(page,'Review this');await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('A draft that stays with README.');
+  await page.locator('#file-tree [data-path="Same text.md"] > .file-row').click();
+  await expect(page.locator('#file-name')).toHaveText('Same text.md');await expect(page.locator('#composer')).toBeHidden();await expect(page.locator('#feedback-count')).toHaveText('0');
+  const draft=await page.evaluate(()=>window.folderDocuments['README.md'].feedback[0]);
+  expect(draft.body).toBe('A draft that stays with README.');expect(draft.isDraft).toBe(true);
+  await page.locator('#file-tree [data-path="README.md"] > .file-row').click();await expect(page.locator('#file-name')).toHaveText('README.md');
+  await page.locator('#feedback-toggle').click();await page.locator('[data-action=resume]').click();
+  await expect(page.locator('#comment-text')).toHaveValue('A draft that stays with README.');
+});
+
+for(const operation of ['post','discard'])test(`folder switching waits for an in-flight comment ${operation}`,async({page})=>{
+  await folderFixture(page);
+  await selectText(page,'Review this');await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Post this before switching.');
+  await expect(page.locator('#comment-autosave')).toHaveText('Draft saved');
+  await page.evaluate(operation=>{
+    const original=window.webkit.messageHandlers.mdr.postMessage;
+    window.webkit.messageHandlers.mdr.postMessage=message=>{
+      if(operation==='post'?message.action==='saveFeedback'&&!message.isDraft:message.action==='discardDraft'){window.releaseCommentPost=()=>original(message);return;}
+      original(message);
+    };
+  },operation);
+  await page.locator(operation==='post'?'#save-comment':'#cancel-comment').click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.releaseCommentPost)).toBe('function');
+  const otherFile=page.locator('#file-tree [data-path="Same text.md"] > .file-row');
+  await otherFile.click();await otherFile.click();
+  await expect(page.locator('#notice-text')).toHaveText('Wait for your current feedback to finish saving.');
+  if(operation==='post')await expect(page.locator('#comment-text')).toHaveAttribute('readonly','');
+  expect(await page.evaluate(()=>window.testMessages.filter(message=>message.action==='openWorkspaceFile').length)).toBe(0);
+  await page.evaluate(()=>window.releaseCommentPost());await expect(page.locator('#composer')).toBeHidden();
+  await otherFile.click();await expect(page.locator('#file-name')).toHaveText('Same text.md');
+  const feedback=await page.evaluate(()=>window.folderDocuments['README.md'].feedback);
+  if(operation==='post')expect(feedback[0].isDraft).toBe(false);else expect(feedback).toHaveLength(0);
+});
+
+test('folder switching saves a suggestion, preserves drafts on failed opens and refreshes added files',async({page})=>{
+  await folderFixture(page);
+  await page.locator('#suggest-mode').click();await page.locator('#document p').click();await page.locator('#document [contenteditable=true]').fill('A revised paragraph.');
+  await page.evaluate(()=>window.rejectFolderOpen=true);
+  await page.locator('#file-tree [data-path="Same text.md"] > .file-row').click();
+  await expect(page.locator('#notice-text')).toHaveText('This file cannot be read.');
+  await expect(page.locator('#document [contenteditable=true]')).toHaveText('A revised paragraph.');await expect(page.locator('#file-name')).toHaveText('README.md');
+  await page.evaluate(()=>window.rejectFolderOpen=false);
+  await page.locator('#file-tree [data-path="Same text.md"] > .file-row').click();
+  await expect(page.locator('#file-name')).toHaveText('Same text.md');await expect(page.locator('#edit-bar')).toBeHidden();
+  expect(await page.evaluate(()=>window.folderDocuments['README.md'].feedback[0].body)).toBe('A revised paragraph.');
+  await page.evaluate(()=>{window.folderEntries[''].push({name:'New.md',path:'New.md',isDirectory:false,enabled:true});window.mdr.directoryChanged('');});
+  await expect(page.locator('#file-tree [data-path="New.md"]')).toBeVisible();
+  await page.evaluate(()=>{window.folderEntries['']=window.folderEntries[''].filter(entry=>entry.path!=='New.md');window.mdr.directoryChanged('');});
+  await expect(page.locator('#file-tree [data-path="New.md"]')).toHaveCount(0);
+  await page.locator('#file-tree [data-path="empty"] > .file-row').click();await expect(page.locator('#file-tree [data-path="empty"]')).toContainText('Empty folder');
+});

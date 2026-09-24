@@ -6,8 +6,8 @@
 <key>CFBundleDisplayName</key><string>mdr</string>
 <key>CFBundleExecutable</key><string>mdr</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.3.4</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>0.4.0</string>
+<key>CFBundleVersion</key><string>10</string>
 <key>CFBundleIconFile</key><string>MDRIcon</string>
 <key>CFBundleIconName</key><string>MDRIcon</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -19,6 +19,11 @@
 <key>LSHandlerRank</key><string>Alternate</string>
 <key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string><string>public.plain-text</string></array>
 <key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string></array>
+</dict><dict>
+<key>CFBundleTypeName</key><string>Folder of Markdown documents</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>None</string>
+<key>LSItemContentTypes</key><array><string>public.folder</string></array>
 </dict></array>
 <key>UTImportedTypeDeclarations</key><array><dict>
 <key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>

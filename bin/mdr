@@ -23,8 +23,8 @@ elif (( $# == 0 )); then
   open "$MDR_APP_PATH"
 else
   for MDR_SOURCE_PATH in "$@"; do
-    if [[ ! -f "$MDR_SOURCE_PATH" ]]; then
-      print -u2 "mdr: file not found: $MDR_SOURCE_PATH"
+    if [[ ! -f "$MDR_SOURCE_PATH" && ! -d "$MDR_SOURCE_PATH" ]]; then
+      print -u2 "mdr: file or folder not found: $MDR_SOURCE_PATH"
       exit 1
     fi
   done
