@@ -150,7 +150,6 @@ function updateProgress(){
   let active=headings[0]?.id;
   for(const heading of headings){const el=$(heading.id);if(el&&el.getBoundingClientRect().top-top<110)active=heading.id;}
   $('toc').querySelectorAll('a').forEach(a=>a.classList.toggle('active',a.dataset.section===active));
-  $('selection-menu').hidden=true;
 }
 
 function drawMinimap(){
@@ -174,12 +173,14 @@ function drawMinimap(){
     if(element.hasAttribute('data-has-feedback')){ctx.fillStyle=accent;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(3,top+2,1.5,0,Math.PI*2);ctx.fill();}
   }
   ctx.globalAlpha=1;updateProgress();
+  // An incoming reply or delayed resize must not dismiss an active selection.
+  if(!$('selection-menu').hidden)captureSelection();
 }
 
 function moveMinimap(event){const box=$('minimap-track').getBoundingClientRect();const y=Math.max(0,Math.min(box.height,event.clientY-box.top));$('scroll-area').scrollTop=y/box.height*$('scroll-area').scrollHeight-$('scroll-area').clientHeight/2;}
 $('minimap-track').addEventListener('pointerdown',event=>{moveMinimap(event);$('minimap-track').setPointerCapture(event.pointerId);});
 $('minimap-track').addEventListener('pointermove',event=>{if($('minimap-track').hasPointerCapture(event.pointerId))moveMinimap(event);});
-$('scroll-area').addEventListener('scroll',updateProgress,{passive:true});
+$('scroll-area').addEventListener('scroll',()=>{updateProgress();$('selection-menu').hidden=true;},{passive:true});
 new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(drawMinimap,60);}).observe($('scroll-area'));
 
 function mappedSelection(){

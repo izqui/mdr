@@ -100,6 +100,20 @@ test('agent replies appear while typing another draft and addressed notes stay o
   await page.screenshot({path:'work/qa/live-replies.png'});
 });
 
+test('an incoming review refresh preserves the selected text and comment toolbar',async({page})=>{
+  await selectText(page,'projects');
+  // Same-source updates repaint annotations and the overview, like an agent reply.
+  await page.evaluate(()=>window.mdr.receive(structuredClone(window.testState)));
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  expect(await page.evaluate(()=>window.getSelection().toString())).toBe('projects');
+  await page.locator('#comment-selection').click();
+  await expect(page.locator('#composer-quote')).toHaveText('projects');
+  await page.locator('#comment-text').fill('Keep the selected passage through a refresh.');
+  await page.locator('#save-comment').click();
+  await expect(page.locator('.card-quote')).toHaveText('projects');
+  expect(await page.evaluate(()=>window.testState.feedback[0].anchor.exact)).toBe('projects');
+});
+
 test('saved drafts can resume after the reader reloads',async({page})=>{
   await selectText(page,'projects');await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('An unfinished thought.');
   await expect(page.locator('#comment-autosave')).toHaveText('Draft saved');
