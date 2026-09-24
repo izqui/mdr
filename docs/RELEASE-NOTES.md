@@ -1,5 +1,7 @@
 A quiet Mac reader for the specs you write with agents.
 
+New in 0.4.1: blank views until a document is open, with filler copy removed from the sidebar, feedback panel, and settings.
+
 New in 0.4.0: open a whole folder of specs.
 
 - Run `mdr ./specs` or choose File → Open Folder… (⌘⇧O).

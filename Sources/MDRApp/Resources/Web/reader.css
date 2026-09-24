@@ -117,3 +117,5 @@
 .file-tree-message{font-size:11px;line-height:1.5;color:var(--muted);padding:8px;overflow-wrap:anywhere}.file-tree-message button{display:block;padding:6px 0;color:var(--accent)}
 .open-folder-button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;font-size:10px;padding:12px 0 0;color:var(--muted)}.open-folder-button span{color:var(--subtle);font-size:9px}
 @media print{.sidebar-tabs,.sidebar-pane,.open-folder-button{display:none!important}}
+
+body.empty-document .document-wrap,body.empty-document .minimap,body.empty-document .statusbar,body.empty-document .outline-heading,body.empty-document #suggest-hint{display:none}

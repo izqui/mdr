@@ -218,13 +218,9 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         if let url {
             let loaded = try LoadedDocument(url: url)
             snapshot = loaded.snapshot; review = loaded.review; diskHash = loaded.diskHash; notice = loaded.notice
-        } else if workspace != nil {
-            snapshot = SourceSnapshot(text: "# A folder of ideas\n\nChoose a Markdown document in the sidebar to start reading. Expand folders to explore, or use the arrow keys to move through the tree.\n\nOther files stay visible, dimmed. Your comments and suggestions stay beside each original document.\n")
-            review = Review(sourcePath: "Folder", snapshot: snapshot)
         } else {
-            let guide = readerResources.url(forResource: "welcome", withExtension: "md", subdirectory: "Web")!
-            snapshot = try SourceSnapshot.read(guide)
-            review = Review(sourcePath: "Welcome", snapshot: snapshot)
+            snapshot = SourceSnapshot(text: "")
+            review = Review(sourcePath: workspace == nil ? "Welcome" : "Folder", snapshot: snapshot)
         }
         snapshots[snapshot.revision.sha256] = snapshot
         let config = WKWebViewConfiguration()
@@ -596,7 +592,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
             let revision = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.revision))
             let items = try JSONSerialization.jsonObject(with: JSONEncoder().encode(review.feedback))
             var value: [String: Any] = ["source": snapshot.text, "revision": revision, "feedback": items,
-                "fileName": sourceURL?.lastPathComponent ?? workspace?.root.lastPathComponent ?? "The mdr field guide", "filePath": sourceURL?.path ?? "",
+                "fileName": sourceURL?.lastPathComponent ?? workspace?.root.lastPathComponent ?? "", "filePath": sourceURL?.path ?? "",
                 "feedbackPath": sourceURL.map { ReviewFile.url(for: $0).path } ?? "", "author": reviewerName,
                 "hasSidecar": diskHash != nil, "isWelcome": sourceURL == nil, "notice": notice ?? "",
                 "theme": UserDefaults.standard.string(forKey: "theme") ?? "paper",
