@@ -37,4 +37,8 @@ if [ -d "$MDR_INSTALL_STAGE/previous.app" ]; then
   mv "$MDR_INSTALL_STAGE/previous.app" "work/previous-installations/$(basename "$MDR_INSTALL_STAGE").app"
 fi
 "$MDR_INSTALL_APP/Contents/MacOS/mdr" --install-cli "$MDR_COMMAND_DIR"
+# Test installations must not change the user's LaunchServices registrations.
+if [ "$MDR_INSTALL_DIR" = "$HOME/Applications" ]; then
+  python3 scripts/register-local-app.py "$MDR_INSTALL_APP"
+fi
 echo "Installed $MDR_INSTALL_APP. Quit and reopen mdr to use the new version."
