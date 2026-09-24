@@ -9,6 +9,7 @@ Sources/MDRApp/Resources/Web/chunks/
 work/
 *.feedback.md
 *.feedback.md.lock
+*.mdr-lock
 verification*.json
 /Preview.png
 /Code-review.png
