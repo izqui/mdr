@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMarkdown,renderMarkdown} from './markdown.mjs';
+import {createMarkdown,renderMarkdown,highlightedLines} from './markdown.mjs';
 
 function texts(source){const r=renderMarkdown(createMarkdown(),source);return r.tokens.filter(t=>t.type==='inline').flatMap(t=>t.children).filter(t=>t.content&&['text','text_special','code_inline'].includes(t.type));}
 test('rendered text spans point to exact Markdown, including repeated words and links',()=>{
@@ -46,4 +46,23 @@ test('heading fragments use visible text and distinguish duplicates without shad
   const {headings,html}=renderMarkdown(createMarkdown(),'# API **contract**\n\n## API `contract`\n\n## API contract-1\n\n## API contract\n\n## Café & [details](next.md)\n\n## Document\n');
   assert.deepEqual(headings.map(h=>h.slug),['api-contract','api-contract-1','api-contract-1-1','api-contract-2','café--details','document']);
   assert.match(html,/id="section-5"/);assert.ok(!html.includes('id="document"'));
+});
+
+test('deferred code retains exact LF and CRLF offsets without syntax markup',()=>{
+  for(const newline of ['\n','\r\n']){
+    const source=['```typescript','const a = "<hello>";','const b = 2;','```',''].join(newline);
+    const result=renderMarkdown(createMarkdown({highlight:false}),source);
+    assert.ok(!result.html.includes('hljs-'));
+    assert.match(result.html,/data-highlight-pending/);
+    const lines=result.tokens.find(t=>t.type==='fence').meta.codeLines;
+    assert.equal(source.slice(lines[0].start,lines[1].next),'const a = "<hello>";'+newline+'const b = 2;'+newline);
+    if(newline==='\n')assert.match(result.html,/class="code-line code-source"/);
+    else assert.match(result.html,/data-atomic="true"/);
+  }
+});
+
+test('highlight cache results cannot be mutated by a renderer consuming the trailing line',()=>{
+  const first=highlightedLines('const value = 42;\n','typescript');first.pop();first[0]='corrupted';
+  const next=highlightedLines('const value = 42;\n','typescript');
+  assert.equal(next.length,2);assert.match(next[0],/hljs-keyword/);assert.ok(!next.includes('corrupted'));
 });

@@ -5,7 +5,12 @@ hljs.registerLanguage('dockerfile',dockerfile);
 
 export const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// Bound the cache by output size as highlighted markup can dwarf the source.
+const highlightCache=new Map();let highlightCacheSize=0;
+const highlightCacheLimit=4_000_000;
 export function highlightedLines(code, language) {
+  const key=language+'\0'+code,cached=highlightCache.get(key);
+  if(cached){highlightCache.delete(key);highlightCache.set(key,cached);return [...cached.lines];}
   let html=escapeHTML(code);
   if(hljs.getLanguage(language)){
     try{html=hljs.highlight(code,{language,ignoreIllegals:true}).value;}catch{}
@@ -15,11 +20,16 @@ export function highlightedLines(code, language) {
     if(chunk==='\n'){lines[lines.length-1]+='</span>'.repeat(stack.length);lines.push(stack.join(''));}
     else {lines[lines.length-1]+=chunk;if(chunk.startsWith('<span'))stack.push(chunk);else if(chunk==='</span>')stack.pop();}
   }
+  const size=key.length+lines.reduce((sum,line)=>sum+line.length,0);
+  if(size<=highlightCacheLimit){
+    while(highlightCacheSize+size>highlightCacheLimit&&highlightCache.size){const oldest=highlightCache.keys().next().value;highlightCacheSize-=highlightCache.get(oldest).size;highlightCache.delete(oldest);}
+    highlightCache.set(key,{lines:[...lines],size});highlightCacheSize+=size;
+  }
   return lines;
 }
 
 /** Preserve parser source positions before Markdown's formatting tokens disappear. */
-export function createMarkdown() {
+export function createMarkdown({highlight=true}={}) {
   const md = new MarkdownIt({html:false, linkify:false, typographer:false, breaks:false});
   md.inline.ruler2.disable('fragments_join');
   md.core.ruler.disable('text_join');
@@ -78,18 +88,24 @@ export function createMarkdown() {
     const t=tokens[i], language=t.info.trim().split(/\s/)[0];
     const sourceAttrs = t.meta ? ` data-block-start="${t.meta.start}" data-block-end="${t.meta.end}"` : '';
     if (language === 'mermaid') return `<figure class="diagram"${sourceAttrs}><div class="diagram-label">DIAGRAM <span>MERMAID</span></div><div class="mermaid">${escapeHTML(t.content)}</div></figure>`;
-    const lines=highlightedLines(t.content,language),rawLines=t.content.split('\n');
+    const lines=highlight?highlightedLines(t.content,language):escapeHTML(t.content).split('\n'),rawLines=t.content.split('\n');
     if(rawLines.at(-1)===''){rawLines.pop();lines.pop();}
     const count=rawLines.length;
     const body=lines.map((line,index)=>{
       const mapping=t.meta?.codeLines?.[index],last=index===lines.length-1;
       const attrs=mapping?` data-src-start="${mapping.start}" data-src-end="${mapping.end}"`:'';
-      const newline=(!last||t.content.endsWith('\n'))?`<span${mapping?` data-src-start="${mapping.end}" data-src-end="${mapping.next}"${mapping.next-mapping.end!==1?' data-atomic="true"':''}`:''}>\n</span>`:'';
+      const hasNewline=!last||t.content.endsWith('\n');
+      // Normal LF code needs one element per line, including its newline. Keep
+      // the separate atomic newline mapping for CRLF and prefixed fence lines.
+      if(mapping&&(!hasNewline||mapping.next-mapping.end===1)){
+        return `<span class="code-line code-source" data-line="${index+1}" data-src-start="${mapping.start}" data-src-end="${hasNewline?mapping.next:mapping.end}"${hasNewline?' data-code-newline="true"':''}>${line}${hasNewline?'\n':''}</span>`;
+      }
+      const newline=hasNewline?`<span${mapping?` data-src-start="${mapping.end}" data-src-end="${mapping.next}"${mapping.next-mapping.end!==1?' data-atomic="true"':''}`:''}>\n</span>`:'';
       return `<span class="code-line" data-line="${index+1}"><span class="code-source"${attrs}>${line}</span>${newline}</span>`;
     }).join('');
     const first=t.meta?.codeLines?.[0],last=t.meta?.codeLines?.at(-1);
     const editAttrs=first&&last?` data-edit-start="${first.start}" data-edit-end="${last.next}" data-code-editor="true" tabindex="0"`:'';
-    return `<div class="code-block"${sourceAttrs}><div class="code-label"><span>${escapeHTML(language || 'TEXT')}<span class="code-line-count">${count} ${count===1?'line':'lines'}</span></span><div class="code-actions"><button class="suggest-code" title="Suggest a change to this code">Suggest</button><button class="wrap-code" aria-pressed="false" title="Wrap long lines">Wrap</button><button class="expand-code" aria-pressed="false" title="Expand code">Expand</button><button class="copy-code" aria-label="Copy code">Copy</button></div></div><pre><code${editAttrs}>${body}</code></pre></div>`;
+    return `<div class="code-block" style="--code-lines:${count}" data-code-language="${escapeHTML(language)}"${highlight?'':' data-highlight-pending="true"'}${sourceAttrs}><div class="code-label"><span>${escapeHTML(language || 'TEXT')}<span class="code-line-count">${count} ${count===1?'line':'lines'}</span></span><div class="code-actions"><button class="suggest-code" title="Suggest a change to this code">Suggest</button><button class="wrap-code" aria-pressed="false" title="Wrap long lines">Wrap</button><button class="expand-code" aria-pressed="false" title="Expand code">Expand</button><button class="copy-code" aria-label="Copy code">Copy</button></div></div><pre><code${editAttrs}>${body}</code></pre></div>`;
   };
   return md;
 }

@@ -1,13 +1,14 @@
 {
   "name": "mdr-reader",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
     "build": "bash scripts/build-app.sh",
     "test": "node --test web/*.test.mjs && swift test",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "benchmark": "npm run build:web && swift build && node scripts/benchmark-reader.mjs"
   },
   "dependencies": {
     "highlight.js": "11.12.0",

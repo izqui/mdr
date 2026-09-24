@@ -5,7 +5,7 @@ await writeFile('Sources/MDRApp/Resources/Web/mdr-skill.md',await readFile('AGEN
 const skillDestination='Sources/MDRApp/Resources/Web/mdr-agent-skill';
 await rm(skillDestination,{recursive:true,force:true});
 await cp('skills/mdr',skillDestination,{recursive:true});
-const result=await build({entryPoints:['web/reader.mjs'],bundle:true,format:'iife',target:['safari17'],minify:true,legalComments:'eof',metafile:true,outfile:'Sources/MDRApp/Resources/Web/reader.js',logLevel:'info'});
+const result=await build({entryPoints:['web/reader.mjs','web/diagrams.mjs'],bundle:true,format:'iife',target:['safari17'],minify:true,legalComments:'eof',metafile:true,outdir:'Sources/MDRApp/Resources/Web',logLevel:'info'});
 // Ship the licenses with the application, not just with the source checkout.
 const licenseParts=[];
 const packages=[...new Set(Object.keys(result.metafile.inputs).map(path=>path.match(/^(.*node_modules\/(?:@[^/]+\/)?[^/]+)\//)?.[1]).filter(Boolean))].sort();

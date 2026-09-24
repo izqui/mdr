@@ -12,6 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["MDR_PERFORMANCE_DIR"] {
+            NSApp.setActivationPolicy(.regular)
+            Task { @MainActor in await NativePerformance.run(owner: self, directory: URL(fileURLWithPath: path)) }
+            return
+        }
         if let path = ProcessInfo.processInfo.environment["MDR_DEMO_DIR"] {
             NSApp.setActivationPolicy(.accessory)
             Task { @MainActor in await NativeDemo.run(owner: self, directory: URL(fileURLWithPath: path)) }
@@ -186,6 +191,7 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
     var exportDestination: URL?
     var exportTemporary: URL?
     var activePrintOperation: NSPrintOperation?
+    var preparingPrint = false
 
     init(url: URL?, owner: AppDelegate) throws {
         self.owner = owner; sourceURL = url
@@ -215,6 +221,11 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         snapshots[snapshot.revision.sha256] = snapshot
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["MDR_PERFORMANCE_DIR"] != nil {
+            config.userContentController.addUserScript(WKUserScript(source: "window.__mdrProfile=true", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        #endif
         webView = WKWebView(frame: .zero, configuration: config)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 850), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
@@ -230,7 +241,12 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground")
         config.userContentController.add(self, name: "mdr")
-        let html = readerResources.url(forResource: "index", withExtension: "html", subdirectory: "Web")!
+        var html = readerResources.url(forResource: "index", withExtension: "html", subdirectory: "Web")!
+        #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["MDR_PERFORMANCE_WEB_DIR"] {
+            html = URL(fileURLWithPath: path).appendingPathComponent("index.html")
+        }
+        #endif
         webView.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
         if let url { watch(url.deletingLastPathComponent()); watchFiles() }
     }
@@ -458,7 +474,10 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
     }
 
     func exportPDF(to url: URL) async throws {
-        guard exportContinuation == nil else { throw MDRError.invalidDocument("A PDF export is already in progress.") }
+        guard exportContinuation == nil, !preparingPrint else { throw MDRError.invalidDocument("A PDF export is already in progress.") }
+        preparingPrint = true
+        defer { preparingPrint = false }
+        _ = try await webView.callAsyncJavaScript("return await window.mdr.prepareForPrint()", arguments: [:], in: nil, contentWorld: .page)
         let info = printInfo()
         info.jobDisposition = .save
         let temporary = url.deletingLastPathComponent().appendingPathComponent(".mdr-export-\(UUID().uuidString).pdf")
@@ -492,11 +511,19 @@ final class ReaderWindow: NSObject, NSWindowDelegate, WKScriptMessageHandler, WK
 
     func printDocument() {
         guard !hasDraft else { call("window.mdr.warning", value: "Save or cancel your current feedback before printing."); return }
-        let operation = webView.printOperation(with: printInfo())
-        operation.showsPrintPanel = true; operation.showsProgressPanel = true
-        operation.jobTitle = sourceURL?.lastPathComponent ?? "mdr"
-        operation.view?.frame = NSRect(origin: .zero, size: operation.printInfo.paperSize)
-        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        guard !preparingPrint else { return }
+        preparingPrint = true
+        Task { @MainActor in
+            defer { preparingPrint = false }
+            do {
+                _ = try await webView.callAsyncJavaScript("return await window.mdr.prepareForPrint()", arguments: [:], in: nil, contentWorld: .page)
+                let operation = webView.printOperation(with: printInfo())
+                operation.showsPrintPanel = true; operation.showsProgressPanel = true
+                operation.jobTitle = sourceURL?.lastPathComponent ?? "mdr"
+                operation.view?.frame = NSRect(origin: .zero, size: operation.printInfo.paperSize)
+                operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+            } catch { owner?.show(error) }
+        }
     }
 
     func mutateReview(_ mutation: (inout Review, SourceSnapshot) throws -> Void) throws {

@@ -1,9 +1,13 @@
 A quiet Mac reader for the specs you write with agents.
 
-New in 0.3.1: file creation and update times above the document heading, refreshed
-as the source changes, plus clearer review messaging and Mac-framed demo images.
-Hover a timestamp to see the full date and timezone. Creation uses the local
-file's creation date; copies and replacements can have a new one.
+New in 0.3.2: faster reading and reviewing of large, code-heavy documents.
+
+- Syntax colors load near the viewport and wait for fast scrolling to settle.
+- Leaner code lines retain precise comment and suggestion anchors, including CRLF files.
+- Indexed anchors, cached outline/minimap geometry, faster search, and incremental thread updates reduce work during reviews.
+- Mermaid loads only when a document needs it; changing appearance preserves the document.
+- PDF export waits for diagrams and prepares all code, including offscreen blocks.
+- A reproducible native benchmark generates a fictional spec with 160 code blocks.
 
 - Rendered Markdown with an outline, minimap, offline Mermaid, and code highlighting.
 - Comments, editable threads, and replacement suggestions that leave the source untouched.

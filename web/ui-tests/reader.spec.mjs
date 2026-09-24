@@ -246,7 +246,7 @@ test('code suggestions preserve literal punctuation and indentation',async({page
   expect(await page.evaluate(()=>window.testState.source)).toBe(source);
 });
 test('export action reaches the native bridge and print layout excludes the app chrome',async({page})=>{
-  await page.locator('#export-pdf').click();expect(await page.evaluate(()=>window.testMessages.some(x=>x.action==='exportPDF'))).toBeTruthy();
+  await page.locator('#export-pdf').click();await expect.poll(()=>page.evaluate(()=>window.testMessages.some(x=>x.action==='exportPDF'))).toBeTruthy();
   await page.emulateMedia({media:'print'});await expect(page.locator('.toolbar')).toBeHidden();await expect(page.locator('.outline')).toBeHidden();await expect(page.locator('#document h1')).toBeVisible();
   expect(await page.locator('#scroll-area').evaluate(el=>getComputedStyle(el).overflow)).toBe('visible');
 });
@@ -283,4 +283,46 @@ test('a long code review keeps deep selections, scrolling geometry and complete 
   })));
   expect(panes).toHaveLength(25);
   for(const pane of panes)expect(pane).toEqual({containment:'none',overflow:'visible',clipped:false,lines:100});
+});
+
+test('offscreen code stays lightweight, selection survives highlighting, and print prepares every block',async({page})=>{
+  const source='# Deferred code\n\n'+Array.from({length:35},(_,i)=>`## Block ${i}\n\n\`\`\`typescript\nconst unique_${i} = "hello";\nconst next_${i} = 42;\n\`\`\`\n\n`).join('');
+  await page.evaluate(source=>{window.testState={...window.testState,source,feedback:[],revision:{...window.testState.revision,sha256:'deferred-code'}};window.mdr.receive(structuredClone(window.testState));},source);
+  const last=page.locator('.code-block').last();
+  await expect(last).toHaveAttribute('data-highlight-pending','true');
+  await page.evaluate(async()=>{
+    const span=document.querySelectorAll('.code-block')[34].querySelector('.code-source');
+    const text=span.firstChild,range=document.createRange(),start=text.textContent.indexOf('unique_34');
+    range.setStart(text,start);range.setEnd(text,start+'unique_34'.length);
+    window.getSelection().removeAllRanges();window.getSelection().addRange(range);
+    span.scrollIntoView({block:'center',behavior:'instant'});
+    await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+    span.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));
+  });
+  await expect(page.locator('#selection-menu')).toBeVisible();
+  expect(await page.evaluate(()=>window.getSelection().toString())).toBe('unique_34');
+  await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('This exact identifier.');await page.locator('#save-comment').click();
+  await expect(page.locator('#composer')).toBeHidden();
+  const anchor=await page.evaluate(()=>window.testState.feedback[0].anchor);
+  expect(source.slice(anchor.start,anchor.end)).toBe('unique_34');
+  await expect(last).not.toHaveAttribute('data-highlight-pending');
+  await page.evaluate(()=>window.mdr.prepareForPrint());
+  await expect(page.locator('[data-highlight-pending]')).toHaveCount(0);
+  expect(await page.locator('.code-block code').last().textContent()).toBe('const unique_34 = "hello";\nconst next_34 = 42;\n');
+  expect(await page.evaluate(()=>[...CSS.highlights.get('mdr-comments')].map(r=>r.toString()))).toContain('unique_34');
+});
+
+test('appearance and replies preserve document nodes, search matches, and unrelated comment cards',async({page})=>{
+  await selectText(page,'projects');await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('First question.');await page.locator('#save-comment').click();await expect(page.locator('#composer')).toBeHidden();
+  await selectText(page,'workspace');await page.locator('#comment-selection').click();await page.locator('#comment-text').fill('Second question.');await page.locator('#save-comment').click();await expect(page.locator('#composer')).toBeHidden();
+  await page.evaluate(()=>{window.retainedHeading=document.querySelector('#document h1');window.retainedCard=document.querySelector('.feedback-card');});
+  await page.locator('#find-button').click();await page.locator('#find-input').fill('workspace');
+  const found=await page.locator('#find-count').textContent();
+  await page.evaluate(()=>{window.testState.feedback[1].body='Updated second question.';window.mdr.receive(structuredClone(window.testState));});
+  expect(await page.evaluate(()=>window.retainedCard===document.querySelector('.feedback-card'))).toBe(true);
+  await expect(page.locator('#find-count')).toHaveText(found);
+  await page.locator('#settings-toggle').click();await page.locator('[data-theme="dark"]').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+  expect(await page.evaluate(()=>window.retainedHeading===document.querySelector('#document h1'))).toBe(true);
+  await expect(page.locator('.mermaid svg')).toBeVisible();
 });

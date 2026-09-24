@@ -22,3 +22,5 @@ verification*.json
 Sources/MDRApp/Resources/Web/mdr-agent-skill/
 Sources/MDRApp/Resources/Web/mdr-skill.md
 Sources/MDRApp/Resources/Web/THIRD-PARTY-LICENSES.txt
+
+/Sources/MDRApp/Resources/Web/diagrams.js

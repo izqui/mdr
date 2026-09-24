@@ -27,6 +27,28 @@ Generated assets, builds, reports, local feedback, and scratch files belong in t
 
 The test suite covers source preservation, Unicode and Markdown source mapping, source changes, conservative reattachment, concurrent writers, saved drafts, editable threads, precise code review, relative links, PDF pagination, and standalone app/CLI/skill installation. Native integration tests require a logged-in macOS GUI session. The CI workflow runs on a GitHub-hosted Mac.
 
+## Performance
+
+`npm run benchmark` opens a separate developer app with a generated fictional
+286 KB specification: 160 code blocks and 4,160 code lines. It records Markdown,
+DOM, annotation, search, and scroll work in the actual system WKWebView. It does
+not open a user's document or change the installed app. Reports and snapshots
+stay under `work/performance`.
+
+```sh
+npm run benchmark -- --runs 3
+# Compare the original reader with the same native harness:
+node scripts/benchmark-reader.mjs --baseline v0.3.1 --runs 3
+```
+
+Run comparisons serially on an otherwise idle Mac. Keep the benchmark window
+visible for frame timing. If macOS places it on another Space or hides it, the
+harness records `background: true` and omits frame timing instead of reporting
+throttled background timers as scrolling performance. Native frame rates depend
+on the display and system load; these measurements are diagnostics, not CI
+thresholds. See [the performance notes](docs/performance.md) for the changes and
+measurement limits. Instrumentation is opt-in and local; no telemetry is sent.
+
 ## Code map
 
 | Location | Responsibility |

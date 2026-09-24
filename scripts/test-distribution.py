@@ -24,6 +24,9 @@ def run(command, *arguments, success=True, input=None):
     return result.stdout
 
 info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+web = next(app.rglob('Web/index.html')).parent
+for asset in ['reader.js', 'diagrams.js', 'reader.css']:
+    assert (web / asset).stat().st_size > 0, f'Missing standalone reader asset: {asset}'
 assert info['CFBundleShortVersionString'] == json.loads((project / 'package.json').read_text())['version']
 assert 'mdr feedback watch' in run(binary, '--help')
 guide = run(binary, '--skill')
